@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DermaAI — Skin Lesion Check</title>
+<meta name="description" content="Explainable AI triage for skin lesions">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%230f766e'/><circle cx='50' cy='50' r='18' fill='%23fff'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo"></span>DermaAI</div>
+  <nav>
+    <a href="#check" class="active">Check</a>
+    <a href="#history">History</a>
+    <a href="#library">Conditions</a>
+    <a href="#about">How it works</a>
+  </nav>
+</header>
+
+<div id="demo-banner" class="banner warn" hidden>
+  <strong>Demo mode.</strong> No trained model is loaded, so results are not meaningful.
+  Train one with <code>python -m dermaai.train</code> and set <code>DERMAAI_CHECKPOINT</code>.
+</div>
+
+<main>
+  <section id="check" class="view">
+    <div class="hero">
+      <h1>Check a skin spot in seconds</h1>
+      <p>Upload a close-up photo of a mole or lesion. DermaAI checks image quality, estimates the likelihood of
+        seven common conditions, shows <em>where</em> it looked, and tells you how soon to see a dermatologist.</p>
+    </div>
+
+    <div class="grid">
+      <form id="form" class="card" autocomplete="off">
+        <label id="drop" class="drop" tabindex="0">
+          <input id="file" type="file" accept="image/*" capture="environment" hidden>
+          <img id="preview" alt="" hidden>
+          <div id="drop-hint">
+            <div class="drop-icon">＋</div>
+            <strong>Drop a photo or tap to take one</strong>
+            <span>JPG, PNG or HEIC-converted · max 10 MB</span>
+          </div>
+        </label>
+        <details class="tips">
+          <summary>Tips for a good photo</summary>
+          <ul>
+            <li>Use daylight; avoid flash and shadows.</li>
+            <li>Fill most of the frame with the lesion and a little surrounding skin.</li>
+            <li>Hold steady and tap to focus. Retake if blurry.</li>
+          </ul>
+        </details>
+        <fieldset>
+          <legend>Optional details <span class="muted">(improve accuracy)</span></legend>
+          <div class="row">
+            <label>Age<input id="age" type="number" min="0" max="120" placeholder="e.g. 45"></label>
+            <label>Sex
+              <select id="sex"><option value="">Prefer not to say</option><option value="female">Female</option><option value="male">Male</option></select>
+            </label>
+          </div>
+          <label>Body location<select id="localization"><option value="">Not specified</option></select></label>
+        </fieldset>
+        <label class="consent"><input id="consent" type="checkbox" required>
+          I understand this is not a medical diagnosis.</label>
+        <button id="submit" type="submit" class="primary" disabled>Analyze</button>
+        <p class="privacy">🔒 Photos are analyzed in memory and never stored on the server.</p>
+      </form>
+
+      <div id="result" class="result">
+        <div class="placeholder card">
+          <h3>Your result will appear here</h3>
+          <ol class="steps">
+            <li><b>Quality check</b> — blur, lighting, framing</li>
+            <li><b>AI analysis</b> — 7 conditions, calibrated probabilities</li>
+            <li><b>Explanation</b> — attention heatmap + ABCDE features</li>
+            <li><b>Triage</b> — clear next step</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="history" class="view" hidden>
+    <div class="section-head">
+      <h2>Lesion history</h2>
+      <button id="clear-history" class="ghost">Clear</button>
+    </div>
+    <p class="muted">Stored only on this device. Re-photograph the same spot monthly — <b>E</b>volution is the most important warning sign.</p>
+    <div id="history-list" class="history"></div>
+  </section>
+
+  <section id="library" class="view" hidden>
+    <h2>Conditions DermaAI recognises</h2>
+    <div id="conditions" class="conditions"></div>
+  </section>
+
+  <section id="about" class="view" hidden>
+    <h2>How it works</h2>
+    <div class="pipeline">
+      <div><span>1</span><h4>Quality gate</h4><p>Sharpness, exposure, glare and framing are measured. Poor photos are rejected with instructions instead of a guess.</p></div>
+      <div><span>2</span><h4>Deep learning</h4><p>An EfficientNet CNN fused with age, sex and body site, trained on dermoscopic images with lesion-grouped splits and class balancing.</p></div>
+      <div><span>3</span><h4>Calibration &amp; uncertainty</h4><p>Temperature scaling makes probabilities honest; test-time augmentation and entropy flag images the model is unsure about.</p></div>
+      <div><span>4</span><h4>Explainability</h4><p>Grad-CAM shows where the network looked; an independent classical ABCDE analysis gives a second, interpretable opinion.</p></div>
+      <div><span>5</span><h4>Safety-first triage</h4><p>Thresholds favour melanoma sensitivity: it is better to over-refer than to miss a cancer.</p></div>
+    </div>
+    <div id="model-card" class="card model-card"></div>
+    <p class="disclaimer" id="disclaimer"></p>
+  </section>
+</main>
+
+<footer>DermaAI · decision support only · not a substitute for a dermatologist</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
