@@ -3,6 +3,15 @@ services:
     build: .
     ports:
       - "8000:8000"
+    environment:
+      DERMAAI_DB: /data/dermaai_cases.db
+      # Set to enable the clinician dashboard at /clinician, e.g. in a .env file.
+      DERMAAI_CLINICIAN_TOKEN: ${DERMAAI_CLINICIAN_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - ./models:/models:ro
+      - dermaai-data:/data
     restart: unless-stopped
+
+volumes:
+  dermaai-data:

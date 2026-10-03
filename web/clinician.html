@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DermaAI Clinician Queue</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%230f766e'/><circle cx='50' cy='50' r='18' fill='%23fff'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo"></span>DermaAI <span class="muted" style="font-weight:500">· Clinician</span></div>
+  <nav><a href="/">Patient app</a><a href="#" id="logout" hidden>Sign out</a></nav>
+</header>
+<main>
+  <form id="login" class="card" style="max-width:420px;margin:40px auto" hidden>
+    <h2>Clinician sign-in</h2>
+    <p class="muted">Enter the clinic access token configured on the server (<code>DERMAAI_CLINICIAN_TOKEN</code>).</p>
+    <fieldset><label>Access token<input id="token" type="password" autocomplete="off" required></label></fieldset>
+    <button class="primary" type="submit">Open queue</button>
+    <p id="login-error" class="muted"></p>
+  </form>
+
+  <div id="dash" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="section-head" style="margin-top:20px">
+      <h2>Review queue</h2>
+      <div class="tabs" id="filter">
+        <button type="button" class="on" data-status="">Open</button>
+        <button type="button" data-status="new">New</button>
+        <button type="button" data-status="in_review">In review</button>
+        <button type="button" data-status="closed">Closed</button>
+      </div>
+    </div>
+    <div class="clin-grid">
+      <div id="queue" class="queue"></div>
+      <div id="detail"><div class="placeholder card"><h3>Select a case</h3><p class="muted">Cases are sorted by AI urgency, then malignancy probability, then age.</p></div></div>
+    </div>
+  </div>
+</main>
+<footer>AI estimates support, but never replace, clinical judgement.</footer>
+<script src="/static/clinician.js"></script>
+</body>
+</html>

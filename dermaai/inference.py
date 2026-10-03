@@ -15,6 +15,7 @@ from .abcde import compute_abcde
 from .config import CLASSES, CONDITIONS, IMAGENET_MEAN, IMAGENET_STD, MALIGNANT, Settings, get_settings
 from .explain import grad_cam, overlay, to_data_url
 from .metadata import encode_metadata
+from .metrics import mahalanobis_score
 from .model import DermNet, load_checkpoint
 from .quality import assess_quality
 from .train import pick_device
@@ -35,6 +36,9 @@ TRIAGE_TEXT = {
             "Findings are consistent with a benign lesion. Re-photograph monthly and watch for changes."),
     "retake": ("Please retake the photo",
                "The image quality is too poor for a reliable analysis."),
+    "unfamiliar": ("This doesn't look like a typical skin-lesion photo",
+                   "The image is unlike the photos the AI was trained on, so its answer would not be reliable. "
+                   "Photograph a single spot close-up, in focus and in daylight. If you are worried about it, see a doctor."),
 }
 
 
@@ -57,12 +61,14 @@ class Predictor:
         self.classes: list[str] = list(info.get("classes", CLASSES))
         self.img_size = int(info.get("img_size", 224))
         self.temperature = float(info.get("temperature") or 1.0)
+        self.ood = info.get("ood")  # {"means", "precision", "threshold"} or None
         self.info = {
             "name": "DermaAI",
             "version": info.get("version", __version__),
             "arch": info["arch"],
             "img_size": self.img_size,
             "temperature": round(self.temperature, 4),
+            "ood_detection": self.ood is not None,
             "classes": self.classes,
             "demo_mode": self.demo_mode,
             "trained_at": info.get("trained_at"),
@@ -81,7 +87,17 @@ class Predictor:
         mean = probs.mean(0)
         return mean, float(probs[:, mean.argmax()].std())
 
-    def _triage(self, probs: dict[str, float], uncertainty: float, quality_ok: bool, abcde: dict | None) -> dict:
+    @torch.no_grad()
+    def _ood_check(self, x: torch.Tensor) -> dict | None:
+        if not self.ood:
+            return None
+        score = float(mahalanobis_score(self.model.embed(x).float(), self.ood).item())
+        thr = float(self.ood["threshold"])
+        # "far": so unlike any lesion (noise, objects, screenshots) that even an urgent answer is meaningless.
+        return {"score": round(score, 2), "threshold": round(thr, 2), "unfamiliar": score > thr, "far": score > 3 * thr}
+
+    def _triage(self, probs: dict[str, float], uncertainty: float, quality_ok: bool, abcde: dict | None,
+                unfamiliar: bool | str = False) -> dict:
         s = self.settings
         p_mel = probs.get("mel", 0.0)
         p_mal = sum(probs.get(c, 0.0) for c in MALIGNANT)
@@ -105,9 +121,18 @@ class Predictor:
         if level == "low" and abcde and abcde["suspicion_score"] >= 0.6:
             level = "moderate"
             reasons.append("The ABCDE analysis found marked asymmetry, irregular border or multiple colours.")
+        text_key = level
+        if (unfamiliar and level in {"low", "moderate"}) or unfamiliar == "far":
+            # A merely unusual image keeps an urgent result (an atypical cancer must still be flagged);
+            # only images far outside the training distribution are sent back for a retake.
+            level = "retake"
+            text_key = "unfamiliar"
+            reasons = ["Out-of-distribution check: the image's features are far from every lesion type seen in training."]
+        elif unfamiliar:
+            reasons.append("The image is unusual for the model; the urgent recommendation stands as a precaution.")
         if self.demo_mode:
             reasons.insert(0, "DEMO MODE: no trained model is loaded, so this result is not meaningful.")
-        title, message = TRIAGE_TEXT[level]
+        title, message = TRIAGE_TEXT[text_key]
         return {"level": level, "title": title, "message": message, "reasons": reasons,
                 "malignancy_probability": round(p_mal, 4), "melanoma_probability": round(p_mel, 4)}
 
@@ -120,13 +145,15 @@ class Predictor:
         x = self.transform(image).unsqueeze(0).to(self.device)
         meta = encode_metadata(age, sex, localization).unsqueeze(0).to(self.device)
         probs, tta_std = self._predict(x, meta)
+        ood = self._ood_check(x)
+        unfamiliar = "far" if ood and ood["far"] else bool(ood and ood["unfamiliar"])
         entropy = float(-(probs * np.log(probs + 1e-12)).sum() / np.log(len(probs)))
         uncertainty = float(np.clip(0.8 * entropy + 2.0 * tta_std, 0, 1))
         prob_map = {c: float(p) for c, p in zip(self.classes, probs)}
         ranked = sorted(prob_map.items(), key=lambda kv: kv[1], reverse=True)
 
         abcde = compute_abcde(rgb)
-        triage = self._triage(prob_map, uncertainty, quality["acceptable"], abcde)
+        triage = self._triage(prob_map, uncertainty, quality["acceptable"], abcde, unfamiliar)
 
         explanation = None
         if explain:
@@ -164,6 +191,7 @@ class Predictor:
                          else "medium" if uncertainty >= 0.45 else "low",
             },
             "triage": triage,
+            "ood": ood,
             "abcde": abcde,
             "explanation": explanation,
             "disclaimer": DISCLAIMER,

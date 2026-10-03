@@ -32,3 +32,10 @@ def test_train_and_serve(tmp_path):
     out = p.analyze(img, age=70, sex="male", localization="back")
     assert out["model"]["demo_mode"] is False
     assert not any("DEMO" in r for r in out["triage"]["reasons"])
+    assert p.info["ood_detection"] and out["ood"]["threshold"] > 0
+
+    # Out-of-distribution: random noise is nothing like a lesion photo.
+    import numpy as np
+    noise = Image.fromarray(np.random.default_rng(0).integers(0, 255, (256, 256, 3), dtype=np.uint8))
+    r = p.analyze(noise, explain=False)
+    assert r["ood"]["unfamiliar"] and r["triage"]["level"] == "retake"

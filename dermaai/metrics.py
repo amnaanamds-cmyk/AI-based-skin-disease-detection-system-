@@ -81,3 +81,27 @@ def fit_temperature(logits: torch.Tensor, labels: torch.Tensor, max_iter: int = 
 
     opt.step(closure)
     return float(log_t.exp().clamp(0.05, 20.0).item())
+
+
+
+def fit_feature_density(feats: np.ndarray, labels: np.ndarray) -> dict:
+    """Class-conditional Gaussians with a shared, shrunk covariance (Lee et al., 2018).
+
+    Distance from the nearest class mean in the backbone's feature space flags
+    images unlike the training data far more reliably than softmax confidence,
+    which neural networks keep high even on noise.
+    """
+    from sklearn.covariance import LedoitWolf
+
+    classes = np.unique(labels)
+    means = np.stack([feats[labels == c].mean(0) for c in classes])
+    centred = feats - means[np.searchsorted(classes, labels)]
+    precision = LedoitWolf().fit(centred).precision_
+    return {"means": torch.tensor(means, dtype=torch.float32), "precision": torch.tensor(precision, dtype=torch.float32)}
+
+
+def mahalanobis_score(feats: torch.Tensor, density: dict) -> torch.Tensor:
+    """Squared Mahalanobis distance to the closest class mean (higher = less familiar)."""
+    diff = feats[:, None, :] - density["means"][None].to(feats)
+    d = torch.einsum("bkd,de,bke->bk", diff, density["precision"].to(feats), diff)
+    return d.min(dim=1).values

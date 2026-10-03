@@ -22,8 +22,12 @@ DermaAI turns any phone or dermatoscope into a **triage assistant** that answers
    whether a routine is working.
 9. **Virtual dermatology assistant.** It answers questions 24/7, explains the user's own results, and always
    escalates red-flag symptoms.
+10. **Closes the care loop.** A live camera coach gets a usable photo the first time, a body map tracks every
+   mole over time, and one tap sends a case to a dermatologist. Clinicians work a queue sorted by AI urgency and
+   export to the hospital record (HL7 FHIR).
+11. **Knows what it doesn't know.** Out-of-distribution detection recognises photos that are not lesions.
 
-## Live demo script (3 minutes)
+## Live demo script (5 minutes)
 1. Upload a blurry photo. DermaAI asks for a retake and says why. *(Trust: it knows its limits.)*
 2. Upload a nevus. Result: low priority, the outline is drawn and ABCDE is low. Save to history.
 3. Upload a melanoma. Result: **HIGH priority**, the heatmap sits on the irregular, multi-coloured region, with a clear next step.
@@ -32,7 +36,12 @@ DermaAI turns any phone or dermatoscope into a **triage assistant** that answers
    that fit the budget. Tick "pregnant" and retinoids disappear.
 6. **Track tab**: upload before/after photos of a spot. Result: "Significant change, 123% larger, new black colour."
 7. **Assistant**: type "my mole is bleeding" and it escalates immediately; tap "Explain my last result".
-8. Show the ONNX export. It runs offline on a phone for clinics with no connectivity.
+8. **Live camera**: the coach says "too dark", then "centre the spot", then auto-captures.
+9. **Body map**: pin a mole on the back, check it twice, then "Compare last two checks" shows the growth alert.
+10. **Referral**: tap "Send to a dermatologist". Open `/clinician` on a second screen: the case is at the top of the
+    queue. Reply, and the patient sees it under History. Export FHIR.
+11. Upload a photo of a cup (needs a trained model): "This doesn't look like a typical skin-lesion photo".
+12. Show the ONNX export. It runs offline on a phone for clinics with no connectivity.
 
 ## Who pays (business model)
 | Segment | Offer | Model |
@@ -40,7 +49,7 @@ DermaAI turns any phone or dermatoscope into a **triage assistant** that answers
 | Consumers | Free monthly mole check, skin analysis + routine | Freemium; premium tracking, reminders and assistant |
 | Skincare retailers / brands | Ingredient-matched product recommendations | Affiliate / partner catalogue (clearly labelled) |
 | GPs / primary care | Referral prioritisation, printable reports | SaaS per seat |
-| Teledermatology platforms | Pre-screening API to sort queues by urgency | Per-call API pricing |
+| Teledermatology platforms / clinics | Built-in referral queue sorted by AI urgency, FHIR export to the EHR | SaaS per clinic + per-case fee |
 | Insurers / employers | Population skin-cancer screening programmes | B2B licence |
 | NGOs / public health | Offline ONNX app for community health workers | Grant-funded |
 

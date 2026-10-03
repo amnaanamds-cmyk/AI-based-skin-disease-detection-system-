@@ -15,6 +15,7 @@
     <a href="#check" class="active">Lesion check</a>
     <a href="#skincare">Skin care</a>
     <a href="#track">Track</a>
+    <a href="#bodymap">Body map</a>
     <a href="#assistant">Assistant</a>
     <a href="#history">History</a>
     <a href="#library">Conditions</a>
@@ -46,6 +47,8 @@
             <span>JPG, PNG or HEIC-converted · max 10 MB</span>
           </div>
         </label>
+        <button type="button" class="ghost camera-btn" data-target="lesion">📷 Live camera with photo coach</button>
+        <div id="spot-badge" class="spot-badge" hidden></div>
         <details class="tips">
           <summary>Tips for a good photo</summary>
           <ul>
@@ -98,6 +101,7 @@
           <div class="hint"><div class="drop-icon">☺</div><strong>Add a face or skin photo</strong>
             <span>Optional. Without one, the routine is built from your answers only</span></div>
         </label>
+        <button type="button" class="ghost camera-btn" data-target="skin">📷 Live camera with photo coach</button>
         <fieldset>
           <legend>About your skin</legend>
           <div class="row">
@@ -170,6 +174,24 @@
     </div>
   </section>
 
+  <section id="bodymap" class="view" hidden>
+    <div class="hero">
+      <h1>Body map</h1>
+      <p>Pin the spots you want to watch. Each spot keeps its own timeline of checks, so changes are easy to see.
+        Tap the body to add a spot, then check it monthly.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="tabs" id="map-tabs"><button type="button" class="on" data-view="front">Front</button><button type="button" data-view="back">Back</button></div>
+        <div id="body-svg" class="body-svg"></div>
+        <p class="muted" style="font-size:13px">Pins: <span class="pin-key high"></span> high · <span class="pin-key moderate"></span> moderate · <span class="pin-key low"></span> low · <span class="pin-key none"></span> not checked yet</p>
+      </div>
+      <div id="spot-panel" class="result">
+        <div class="placeholder card"><h3>No spot selected</h3><p class="muted">Tap the body to pin a new spot, or select an existing pin.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section id="history" class="view" hidden>
     <div class="section-head">
       <h2>Lesion history</h2>
@@ -177,6 +199,9 @@
     </div>
     <p class="muted">Stored only on this device. Re-photograph the same spot monthly — <b>E</b>volution is the most important warning sign.</p>
     <div id="history-list" class="history"></div>
+    <div class="section-head" style="margin-top:28px"><h2>My dermatologist referrals</h2></div>
+    <p class="muted">Cases you sent for review. The access code is stored only on this device.</p>
+    <div id="referral-list" class="history"></div>
   </section>
 
   <section id="library" class="view" hidden>
@@ -201,7 +226,27 @@
 </main>
 
 <footer>DermaAI · decision support only · not a substitute for a dermatologist</footer>
+<div id="camera-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="section-head"><h3 id="camera-title">Live camera</h3><button type="button" class="ghost" id="camera-close">Close</button></div>
+    <div class="camera-stage">
+      <video id="camera-video" playsinline muted></video>
+      <div class="camera-guide"></div>
+      <div id="camera-hint" class="camera-hint">Starting camera…</div>
+    </div>
+    <div class="coach">
+      <div class="coach-item" data-k="sharp"><span>Focus</span><b>–</b></div>
+      <div class="coach-item" data-k="light"><span>Light</span><b>–</b></div>
+      <div class="coach-item" data-k="glare"><span>Glare</span><b>–</b></div>
+      <div class="coach-item" data-k="frame"><span>Framing</span><b>–</b></div>
+    </div>
+    <div class="actions"><button type="button" class="primary" id="camera-shoot">Capture now</button>
+      <label class="check"><input type="checkbox" id="camera-auto" checked> Auto-capture when everything is good</label></div>
+  </div>
+</div>
 <script src="/static/app.js"></script>
 <script src="/static/care.js"></script>
+<script src="/static/features.js"></script>
+
 </body>
 </html>

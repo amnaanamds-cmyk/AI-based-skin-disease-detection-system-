@@ -11,11 +11,11 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu torch torchvisi
 COPY dermaai ./dermaai
 COPY web ./web
 
-RUN useradd --create-home app
+RUN useradd --create-home app && mkdir -p /data && chown app /data
 USER app
 
 # Mount trained weights at /models/dermaai.pt; without them the API runs in demo mode.
-ENV DERMAAI_CHECKPOINT=/models/dermaai.pt
+ENV DERMAAI_CHECKPOINT=/models/dermaai.pt DERMAAI_DB=/data/dermaai_cases.db
 EXPOSE 8000
 HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"
 CMD ["uvicorn", "dermaai.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

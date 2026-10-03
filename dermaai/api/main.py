@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+import hmac
+import os
+
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +24,7 @@ from ..config import CLASSES, CONDITIONS, LOCALIZATIONS, SEXES
 from ..assistant import chat
 from ..inference import DISCLAIMER, Predictor
 from ..progress import compare_lesions
+from ..referrals import CaseStore, summarize_analysis, to_fhir
 from ..skin_analysis import analyze_skin
 from ..skincare import BUDGETS, CONCERN_LIST, SKIN_TYPES, Profile, build_routine
 
@@ -179,9 +183,111 @@ async def assistant_chat(req: ChatRequest) -> dict:
     return await asyncio.to_thread(chat, req.message, [t.model_dump() for t in req.history], req.context)
 
 
+
+# ---------------- teledermatology referrals ----------------
+# The patient's case secret travels in the X-Case-Token header, never the URL, so it stays out of access logs.
+
+@lru_cache(maxsize=1)
+def get_store() -> CaseStore:
+    return CaseStore()
+
+
+@app.post("/api/referrals", status_code=201)
+async def create_referral(
+    image: UploadFile = File(...),
+    consent: bool = Form(..., description="Patient agrees to store the photo and share it with a clinician"),
+    age: float | None = Form(None, ge=0, le=120),
+    sex: Literal["male", "female", "unknown"] | None = Form(None),
+    localization: str | None = Form(None),
+    note: str | None = Form(None, max_length=1000),
+    contact: str | None = Form(None, max_length=200),
+) -> dict:
+    if not consent:
+        raise HTTPException(400, "Consent is required to send a case to a clinician")
+    if localization and localization.lower() not in LOCALIZATIONS + ["unknown"]:
+        raise HTTPException(422, f"localization must be one of {LOCALIZATIONS}")
+    img = await _read_image(image)
+    # Re-run the analysis server-side: the clinician queue must not trust client-supplied results.
+    async with _lock:
+        result = await asyncio.to_thread(get_predictor().analyze, img, age, sex, localization, False)
+    patient = {"age": age, "sex": sex, "localization": localization, "note": note, "contact": contact}
+    case_id, token = await asyncio.to_thread(get_store().create, img, summarize_analysis(result), patient)
+    return {"case_id": case_id, "access_token": token, "status": "new", "urgency": result["triage"]["level"],
+            "message": "Your case was sent. Keep the access code to check the reply or delete your case."}
+
+
+def _patient_case(case_id: str, token: str) -> None:
+    if not get_store().verify(case_id, token):
+        raise HTTPException(404, "Case not found")  # same answer for wrong token: don't reveal which ids exist
+
+
+@app.get("/api/referrals/{case_id}")
+def referral_status(case_id: str, token: str = Header(..., alias="X-Case-Token")) -> dict:
+    _patient_case(case_id, token)
+    return get_store().patient_view(case_id)
+
+
+@app.delete("/api/referrals/{case_id}")
+def delete_referral(case_id: str, token: str = Header(..., alias="X-Case-Token")) -> dict:
+    _patient_case(case_id, token)
+    get_store().delete(case_id)
+    return {"deleted": True}
+
+
+def clinician(authorization: str | None = Header(None)) -> None:
+    expected = os.getenv("DERMAAI_CLINICIAN_TOKEN")
+    if not expected:
+        raise HTTPException(503, "Clinician access is not configured (set DERMAAI_CLINICIAN_TOKEN)")
+    given = (authorization or "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(given.encode(), expected.encode()):
+        raise HTTPException(401, "Invalid clinician token", headers={"WWW-Authenticate": "Bearer"})
+
+
+@app.get("/api/clinician/cases", dependencies=[Depends(clinician)])
+def clinician_queue(status: Literal["new", "in_review", "closed"] | None = None) -> dict:
+    store = get_store()
+    return {"cases": store.queue(status), "stats": store.stats()}
+
+
+def _case_or_404(case_id: str, with_image: bool = False) -> dict:
+    case = get_store().get(case_id, with_image=with_image)
+    if not case:
+        raise HTTPException(404, "Case not found")
+    return case
+
+
+@app.get("/api/clinician/cases/{case_id}", dependencies=[Depends(clinician)])
+def clinician_case(case_id: str) -> dict:
+    return _case_or_404(case_id, with_image=True)
+
+
+class Review(BaseModel):
+    status: Literal["new", "in_review", "closed"] = "closed"
+    response: str | None = Field(None, max_length=4000, description="Message shown to the patient")
+    clinical_impression: str | None = Field(None, max_length=500)
+    reviewer: str | None = Field(None, max_length=120)
+
+
+@app.post("/api/clinician/cases/{case_id}/review", dependencies=[Depends(clinician)])
+def clinician_review(case_id: str, review: Review) -> dict:
+    _case_or_404(case_id)
+    get_store().review(case_id, review.status, review.response, review.clinical_impression, review.reviewer)
+    return _case_or_404(case_id)
+
+
+@app.get("/api/clinician/cases/{case_id}/fhir", dependencies=[Depends(clinician)])
+def clinician_fhir(case_id: str) -> dict:
+    case = _case_or_404(case_id, with_image=True)
+    return to_fhir(case, case.pop("image"))
+
+
 if WEB_DIR.exists():
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")
+
+    @app.get("/clinician", include_in_schema=False)
+    def clinician_page() -> FileResponse:
+        return FileResponse(WEB_DIR / "clinician.html")

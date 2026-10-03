@@ -1,6 +1,6 @@
 # DermaAI — Explainable AI Skin Health Platform
 
-DermaAI combines five services in one app:
+DermaAI combines these services in one app:
 
 | Service | What it does |
 |---|---|
@@ -10,6 +10,11 @@ DermaAI combines five services in one app:
 | **Smart product recommendations** | Each step is matched to product types by key ingredients, skin type, concerns and budget, with the reasons shown |
 | **Progress tracking** | Before/after comparison of a spot (size, shape, border, new colours, growth per month) and a skin score trend |
 | **Virtual dermatology assistant** | Chat with red-flag escalation, a built-in knowledge base, and optional Claude-powered answers grounded in your results |
+| **Live camera photo coach** | Real-time focus, light, glare and framing feedback in the browser, with auto-capture once the frame is good |
+| **Body map (mole mapping)** | Pin spots on a front/back body diagram; each spot keeps a timeline of checks and can compare its last two photos |
+| **Teledermatology referral** | With consent, send a case to a dermatologist; clinicians work an urgency-sorted queue at `/clinician` and reply to the patient |
+| **EHR export** | Each case exports as an HL7 FHIR R4 bundle (DiagnosticReport, Observations, Media) |
+| **Out-of-distribution detection** | Photos unlike the training data (not a lesion, wrong body part) are recognised instead of being guessed at |
 
 The lesion check is the core. It answers the question patients actually have:
 **"How soon should I see a dermatologist?"** It does not stop at a label. Each check runs a quality gate,
@@ -25,12 +30,13 @@ looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage le
 | Most hackathon skin-AI demos | DermaAI |
 |---|---|
 | Single softmax label | Calibrated probabilities (temperature scaling) + an uncertainty score from TTA and entropy |
-| Accepts any photo | **Quality gate** for blur, exposure, glare, resolution and framing. Bad photos get "retake" with instructions |
+| Accepts any photo | **Quality gate** for blur, exposure, glare, resolution and framing, a **live camera coach**, and **out-of-distribution detection** on deep features |
 | Black box | **Grad-CAM attention map** plus a **classical ABCDE analysis** that clinicians already use |
 | Accuracy on a leaky random split | **Lesion-grouped splits** (HAM10000 has several photos of the same lesion) and model selection on balanced accuracy + melanoma AUC |
 | Image only | **Fusion of image and metadata** (age, sex, body site) |
 | Argmax output | **Safety-first triage** that flags high melanoma risk from a 15% melanoma probability |
-| Server keeps photos | Photos are processed **in memory only**. History stays **on the device** |
+| Server keeps photos | Photos are processed **in memory only**; they are stored only when the patient consents to a referral, and the patient can delete the case |
+| Stops at a prediction | **Closes the loop**: body-map follow-up, a clinician queue sorted by AI urgency, and FHIR export to the hospital record |
 | Notebook | Production REST API, responsive web app, Docker, ONNX export for mobile/edge, CI tests |
 
 ## Conditions (HAM10000 / ISIC 2018 taxonomy)
@@ -141,6 +147,34 @@ person's own skin tone so darker skin is not penalised. They are cosmetic estima
 camera, so they are best used for tracking change in photos taken in the same conditions. No face-landmark model is
 bundled, so remove glasses and keep hair off the face.
 
+### Teledermatology referrals and clinician queue
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /api/referrals` | none (requires `consent=true`) | Store a case. The server re-runs the analysis and returns `case_id` + a one-time `access_token` |
+| `GET /api/referrals/{id}` | `X-Case-Token` header | Patient checks status and the clinician's reply |
+| `DELETE /api/referrals/{id}` | `X-Case-Token` header | Patient deletes the case and photo (right to erasure) |
+| `GET /api/clinician/cases?status=` | `Authorization: Bearer $DERMAAI_CLINICIAN_TOKEN` | Queue sorted by urgency, malignancy probability, then age, plus counts |
+| `GET /api/clinician/cases/{id}` | clinician | Full case with photo, patient details and AI analysis |
+| `POST /api/clinician/cases/{id}/review` | clinician | Set status, private clinical impression, and the message shown to the patient |
+| `GET /api/clinician/cases/{id}/fhir` | clinician | HL7 FHIR R4 `Bundle` for import into an EHR |
+
+The dashboard is at `/clinician`. Clinician endpoints return 503 until `DERMAAI_CLINICIAN_TOKEN` is set. Only a
+SHA-256 hash of each patient token is stored, tokens travel in headers (not URLs, so they stay out of access logs),
+and a wrong token returns the same 404 as a missing case. Cases live in SQLite (`DERMAAI_DB`). For production,
+put the service behind HTTPS and replace the shared clinician token with your identity provider.
+
+### Out-of-distribution detection
+
+After training, `dermaai.train` fits class-conditional Gaussians with a shared Ledoit-Wolf covariance to the
+backbone features of the training images. It then sets a threshold at the 95th percentile of Mahalanobis distances
+on the validation images, which are held out from that fit. At inference, an image beyond the threshold is flagged
+`ood.unfamiliar`. A low or moderate result is replaced by a "doesn't look like a typical lesion photo" retake
+message, but a **high result is kept** so an atypical cancer is still referred. Images more than 3× past the
+threshold (noise, objects, screenshots) are always sent back for a retake. With the synthetic smoke-test model,
+this flagged 20/20 non-lesion images (noise, flat colour, gradients, patterns) and 2/50 real-distribution images.
+Energy scores were tried first and caught none, because weak models stay confident on garbage.
+
 ### Configuration (environment variables)
 
 | Variable | Default | Meaning |
@@ -152,6 +186,10 @@ bundled, so remove glasses and keep hair off the face.
 | `DERMAAI_MALIGNANT_HIGH` / `_MODERATE` | `0.40` / `0.15` | Combined malignant probability thresholds |
 | `DERMAAI_UNCERTAINTY` | `0.75` | Uncertainty above which a "low" result is upgraded to "moderate" |
 | `DERMAAI_MAX_UPLOAD_MB` | `10` | Upload size limit |
+| `DERMAAI_DB` | `dermaai_cases.db` | SQLite file for referral cases |
+| `DERMAAI_CLINICIAN_TOKEN` | none | Enables the clinician API and dashboard |
+| `DERMAAI_FHIR_BASE` | `https://dermaai.local/fhir` | Base URL used for `fullUrl`s in FHIR bundles |
+| `DERMAAI_ASSISTANT_LLM` | `auto` | `1` / `0` to force Claude on or off for the assistant |
 
 Tune the thresholds on your validation set to reach the sensitivity you need.
 
@@ -169,8 +207,10 @@ dermaai/
   inference.py   end-to-end analysis and triage
   skin_analysis.py  facial/skin cosmetic analysis       skincare.py  routine engine + product catalogue
   progress.py    before/after lesion change tracking    assistant.py red flags, knowledge base, Claude
+  referrals.py   consented case store, clinician queue, FHIR R4 export
   api/main.py    FastAPI service
-web/             responsive app: lesion check, skin care, tracking, assistant chat, history, print report
+web/             responsive app: lesion check, live camera coach, skin care, tracking, body map, assistant,
+                 history + referrals, print report; clinician.html is the clinician dashboard
 scripts/         synthetic dataset generator (pipeline smoke tests only)
 tests/           unit, API and end-to-end train→serve tests
 docs/PITCH.md    competition pitch, impact and business model
@@ -179,7 +219,8 @@ docs/PITCH.md    competition pitch, impact and business model
 ## Testing
 
 ```bash
-pytest -q        # 30 tests: vision, metrics, skin care, tracking, assistant (incl. mocked Claude), API, and a synthetic train → serve run
+pytest -q        # 35 tests: vision, metrics, skin care, tracking, assistant (incl. mocked Claude), referrals and access
+                 # control, FHIR, API hardening, and a synthetic train → serve run with out-of-distribution checks
 ```
 
 ## Responsible AI
@@ -187,10 +228,12 @@ pytest -q        # 30 tests: vision, metrics, skin care, tracking, assistant (in
 - **Skin-tone bias.** HAM10000 is mostly lighter skin. Before deployment, evaluate per Fitzpatrick type
   (Fitzpatrick17k, DDI) and fine-tune on diverse data such as PAD-UFES-20. The quality gate's skin detector
   uses a broad colour range so darker skin is not rejected.
-- **Out-of-distribution input.** Non-lesion photos are flagged by the quality gate and by high uncertainty,
-  but this is not a guarantee. Clinical photos differ from dermoscopy, so fine-tune for smartphone use.
+- **Out-of-distribution input.** Non-lesion photos are caught by the quality gate, the feature-space OOD detector
+  and high uncertainty, but this is not a guarantee. Clinical photos differ from dermoscopy, so fine-tune for smartphone
+  use and recalibrate the OOD threshold on smartphone validation images.
 - **Over-referral by design.** Thresholds trade specificity for melanoma sensitivity.
-- **Privacy.** Images are never written to disk server-side. History, skin scores and chat live in the browser's
+- **Privacy.** Images are never written to disk server-side, except for referral cases the patient explicitly
+  consents to (deletable with their access code). History, body map, skin scores and chat live in the browser's
   localStorage. In Claude mode, chat text and a short summary of results (no images) are sent to the Claude API.
 - **Product neutrality.** Recommendations are generic product types defined by ingredients, not brands. Add a
   partner catalogue in `skincare.PRODUCTS` with the same fields if you commercialise.

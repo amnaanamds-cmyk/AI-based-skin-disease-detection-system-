@@ -41,6 +41,10 @@ class DermNet(nn.Module):
         self.dropout = nn.Dropout(drop_rate)
         self.head = nn.Linear(feat_dim + meta_out, num_classes)
 
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Pooled image features (before metadata fusion), used for out-of-distribution detection."""
+        return self.backbone.forward_head(self.backbone.forward_features(x), pre_logits=True)
+
     def forward(self, x: torch.Tensor, meta: torch.Tensor | None = None, return_features: bool = False):
         fmap = self.backbone.forward_features(x)
         pooled = self.backbone.forward_head(fmap, pre_logits=True)

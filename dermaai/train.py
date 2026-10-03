@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 
 from .config import CLASSES
 from .data import LesionDataset, balanced_sampler, class_weights, load_table, split_by_lesion
-from .metrics import compute_metrics, fit_temperature
+from .metrics import compute_metrics, fit_feature_density, fit_temperature, mahalanobis_score
 from .model import DermNet, save_checkpoint
 from .transforms import eval_transform, train_transform
 
@@ -56,6 +56,16 @@ def collect_logits(model: nn.Module, loader: DataLoader, device: torch.device, t
         all_logits.append(logits.float().cpu())
         all_labels.append(y)
     return torch.cat(all_logits), torch.cat(all_labels)
+
+
+@torch.no_grad()
+def collect_features(model, loader: DataLoader, device: torch.device):
+    model.eval()
+    feats, labels = [], []
+    for x, _, y in loader:
+        feats.append(model.embed(x.to(device)).float().cpu())
+        labels.append(y)
+    return torch.cat(feats), torch.cat(labels)
 
 
 def cosine_with_warmup(optimizer, warmup_steps: int, total_steps: int):
@@ -141,6 +151,13 @@ def train(args: argparse.Namespace) -> dict:
     model.load_state_dict(torch.load(best_path, map_location=device, weights_only=False)["state_dict"])
     val_logits, val_labels = collect_logits(model, val_loader, device, tta=True)
     temperature = fit_temperature(val_logits, val_labels)
+    # Out-of-distribution detector: fit feature density on training images (eval transform),
+    # set the threshold on held-out validation images so ~95% of real lesions pass.
+    fit_loader = DataLoader(LesionDataset(train_df, ev), batch_size=args.batch_size, num_workers=args.workers)
+    tr_feats, tr_labels = collect_features(model, fit_loader, device)
+    density = fit_feature_density(tr_feats.numpy(), tr_labels.numpy())
+    val_feats, _ = collect_features(model, val_loader, device)
+    ood_threshold = float(np.percentile(mahalanobis_score(val_feats, density).numpy(), 95))
     test_logits, test_labels = collect_logits(model, test_loader, device, tta=True)
     test_metrics = compute_metrics(torch.softmax(test_logits / temperature, 1).numpy(), test_labels.numpy())
     print(f"[test] temperature={temperature:.3f} " + json.dumps({k: v for k, v in test_metrics.items()
@@ -148,9 +165,11 @@ def train(args: argparse.Namespace) -> dict:
 
     final = out_dir / "dermaai.pt"
     save_checkpoint(final, model, classes=CLASSES, img_size=args.img_size, temperature=temperature,
+                    ood={"means": density["means"], "precision": density["precision"], "threshold": ood_threshold},
                     metrics=test_metrics, best_epoch=best_epoch, version=args.version, trained_at=time.strftime("%Y-%m-%d"))
     (out_dir / "metrics.json").write_text(json.dumps({"test": test_metrics, "history": history,
-                                                      "temperature": temperature}, indent=2))
+                                                      "temperature": temperature,
+                                                      "ood_threshold": ood_threshold}, indent=2))
     print(f"[done] saved {final}")
     return test_metrics
 

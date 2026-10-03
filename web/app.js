@@ -88,6 +88,7 @@ $("#form").addEventListener("submit", async (e) => {
     state.result = body;
     renderResult(body);
     saveHistory(body);
+    window.dispatchEvent(new CustomEvent("dermaai:result", { detail: body }));
   } catch (err) {
     $("#result").innerHTML = `<div class="card"><h3>Analysis failed</h3><p class="muted">${esc(err.message)}</p></div>`;
   } finally {
