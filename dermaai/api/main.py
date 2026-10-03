@@ -33,6 +33,8 @@ app = FastAPI(
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])
 
+MAX_PIXELS = 40_000_000
+
 # Inference is CPU/GPU bound; serialise it so concurrent requests don't thrash memory.
 _lock = asyncio.Lock()
 
@@ -72,12 +74,15 @@ async def _read_image(upload: UploadFile) -> Image.Image:
     if not data:
         raise HTTPException(400, "Empty upload")
     try:
-        img = Image.open(io.BytesIO(data))
+        img = Image.open(io.BytesIO(data))  # reads the header only
+        # Check dimensions before decoding: a tiny compressed file can expand to gigabytes.
+        if img.width * img.height > MAX_PIXELS:
+            raise HTTPException(413, "Image resolution too large")
         img.load()
+    except Image.DecompressionBombError:
+        raise HTTPException(413, "Image resolution too large")
     except (UnidentifiedImageError, OSError):
         raise HTTPException(415, "Unsupported or corrupt image file")
-    if img.width * img.height > 40_000_000:
-        raise HTTPException(413, "Image resolution too large")
     return img
 
 

@@ -49,3 +49,10 @@ def test_rejects_invalid_input(client, lesion_rgb):
     assert client.post("/api/analyze", files={"image": ("x.png", b"not an image", "image/png")}).status_code == 415
     r = client.post("/api/analyze", files={"image": ("l.png", png(lesion_rgb), "image/png")}, data={"localization": "moon"})
     assert r.status_code == 422
+
+
+def test_decompression_bomb_rejected_without_decoding(client):
+    buf = io.BytesIO()
+    Image.new("L", (14000, 14000)).save(buf, format="PNG")  # ~190 KB file, 196 Mpx when decoded
+    r = client.post("/api/analyze", files={"image": ("b.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 413

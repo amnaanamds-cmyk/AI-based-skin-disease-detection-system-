@@ -249,7 +249,8 @@ I can't diagnose, but I'll tell you when something needs a doctor.</div>`;
 async function send(text) {
   text = text.trim();
   if (!text) return;
-  const history = care.chat.map(({ role, content }) => ({ role, content }));
+  // The server accepts a bounded history; the recent turns are what matter for context.
+  const history = care.chat.slice(-20).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
   care.chat.push({ role: "user", content: text });
   renderChat();
   $("#chat-log").insertAdjacentHTML("beforeend", `<div class="msg bot" id="typing">…</div>`);
