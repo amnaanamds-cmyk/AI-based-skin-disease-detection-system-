@@ -1,6 +1,17 @@
-# DermaAI — Explainable AI Skin Lesion Triage
+# DermaAI — Explainable AI Skin Health Platform
 
-DermaAI checks a photo of a mole or skin lesion and answers the question patients actually have:
+DermaAI combines five services in one app:
+
+| Service | What it does |
+|---|---|
+| **AI lesion check** | Skin-cancer triage for a mole or spot: calibrated probabilities, Grad-CAM, ABCDE and how soon to see a doctor |
+| **AI skin analysis** | A face or skin photo is measured for redness, blemishes, uneven tone, texture and shine, giving a skin health score |
+| **Personalised skincare** | A rules engine builds an AM/PM routine from skin type, concerns, age, pregnancy, sensitivity and the photo |
+| **Smart product recommendations** | Each step is matched to product types by key ingredients, skin type, concerns and budget, with the reasons shown |
+| **Progress tracking** | Before/after comparison of a spot (size, shape, border, new colours, growth per month) and a skin score trend |
+| **Virtual dermatology assistant** | Chat with red-flag escalation, a built-in knowledge base, and optional Claude-powered answers grounded in your results |
+
+The lesion check is the core. It answers the question patients actually have:
 **"How soon should I see a dermatologist?"** It does not stop at a label. Each check runs a quality gate,
 gives calibrated probabilities for 7 conditions, reports how uncertain the model is, shows where the network
 looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage level biased toward sensitivity.
@@ -109,6 +120,27 @@ the operating point that matters for screening.
 
 Other endpoints: `GET /api/health`, `/api/model` (model card + test metrics), `/api/conditions`, `/api/options`.
 
+### Skin care, tracking and assistant
+
+| Endpoint | Input | Output |
+|---|---|---|
+| `POST /api/skin/analyze` | multipart `image` + `skin_type`, `concerns` (comma-separated), `age`, `sensitive`, `pregnant`, `sun_exposure`, `budget` | `analysis` (health score, 5 concern scores, visualisation) + `routine` |
+| `POST /api/skin/routine` | JSON profile, optional `photo_scores` | AM/PM routine with matched products and tips (no photo needed) |
+| `POST /api/lesion/compare` | multipart `before`, `after`, optional `days_between` | change level, findings, deltas, monthly growth, outlines |
+| `POST /api/assistant/chat` | JSON `message`, `history`, optional `context` (latest results) | `reply`, `escalation` (urgent/emergency), `sources`, `engine` |
+
+**Assistant engines.** Every message first passes a deterministic red-flag check (allergic reaction, a rash with
+fever, cellulitis, a changing or bleeding mole, a sore that won't heal). The built-in knowledge base always works
+offline. When Claude API credentials are present (`ANTHROPIC_API_KEY`, or `DERMAAI_ASSISTANT_LLM=1` with an
+`ant auth login` profile), replies are written by Claude (`claude-opus-5-5`, low effort, server-side refusal
+fallback), grounded in the retrieved notes and the user's latest results. If the API fails, it falls back to the
+knowledge base. Set `DERMAAI_ASSISTANT_LLM=0` to force offline mode.
+
+**Skin analysis limits.** These are classical image measurements on detected skin pixels, compared against the
+person's own skin tone so darker skin is not penalised. They are cosmetic estimates that depend on lighting and
+camera, so they are best used for tracking change in photos taken in the same conditions. No face-landmark model is
+bundled, so remove glasses and keep hair off the face.
+
 ### Configuration (environment variables)
 
 | Variable | Default | Meaning |
@@ -135,8 +167,10 @@ dermaai/
   metrics.py     clinical metrics, ECE, temperature scaling
   quality.py     image quality gate    abcde.py     segmentation + ABCDE  explain.py Grad-CAM
   inference.py   end-to-end analysis and triage
+  skin_analysis.py  facial/skin cosmetic analysis       skincare.py  routine engine + product catalogue
+  progress.py    before/after lesion change tracking    assistant.py red flags, knowledge base, Claude
   api/main.py    FastAPI service
-web/             responsive single-page app (upload/camera, results, history, print report)
+web/             responsive app: lesion check, skin care, tracking, assistant chat, history, print report
 scripts/         synthetic dataset generator (pipeline smoke tests only)
 tests/           unit, API and end-to-end train→serve tests
 docs/PITCH.md    competition pitch, impact and business model
@@ -145,7 +179,7 @@ docs/PITCH.md    competition pitch, impact and business model
 ## Testing
 
 ```bash
-pytest -q        # 15 tests: vision, metrics, API, and a full synthetic train → calibrate → serve run
+pytest -q        # 30 tests: vision, metrics, skin care, tracking, assistant (incl. mocked Claude), API, and a synthetic train → serve run
 ```
 
 ## Responsible AI
@@ -156,6 +190,9 @@ pytest -q        # 15 tests: vision, metrics, API, and a full synthetic train �
 - **Out-of-distribution input.** Non-lesion photos are flagged by the quality gate and by high uncertainty,
   but this is not a guarantee. Clinical photos differ from dermoscopy, so fine-tune for smartphone use.
 - **Over-referral by design.** Thresholds trade specificity for melanoma sensitivity.
-- **Privacy.** Images are never written to disk server-side. History lives in the browser's localStorage.
+- **Privacy.** Images are never written to disk server-side. History, skin scores and chat live in the browser's
+  localStorage. In Claude mode, chat text and a short summary of results (no images) are sent to the Claude API.
+- **Product neutrality.** Recommendations are generic product types defined by ingredients, not brands. Add a
+  partner catalogue in `skincare.PRODUCTS` with the same fields if you commercialise.
 - **Regulation.** Clinical use needs regulatory clearance (e.g. EU MDR class IIa, FDA 510(k)/De Novo) and
   prospective validation.

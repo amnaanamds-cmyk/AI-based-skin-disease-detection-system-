@@ -12,6 +12,7 @@ function route() {
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id));
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.hash === `#${id}`));
   if (id === "history") renderHistory();
+  window.dispatchEvent(new CustomEvent("dermaai:view", { detail: id }));
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
@@ -24,6 +25,7 @@ async function init() {
       ["/api/health", "/api/options", "/api/conditions", "/api/model"].map((u) => fetch(u).then((r) => r.json())));
     $("#demo-banner").hidden = !health.demo_mode;
     const sel = $("#localization");
+    window.dispatchEvent(new CustomEvent("dermaai:options", { detail: opts }));
     opts.localization.forEach((l) => sel.insertAdjacentHTML("beforeend", `<option value="${esc(l)}">${esc(l[0].toUpperCase() + l.slice(1))}</option>`));
     $("#conditions").innerHTML = conds.conditions.map((c) => `
       <div class="card"><span class="pill ${esc(c.malignancy)}">${esc(c.malignancy)}</span>
@@ -147,6 +149,8 @@ function renderResult(r) {
     <div class="actions">
       <button type="button" class="ghost" onclick="window.print()">Print / save report</button>
       <button type="button" class="ghost" id="new-check">New check</button>
+      <a class="ghost btn" href="#track">Track this spot over time</a>
+      <a class="ghost btn" href="#assistant">Ask the assistant</a>
     </div>
     <p class="disclaimer">${esc(r.disclaimer)} · Model ${esc(r.model.arch)} v${esc(r.model.version)} · ${r.processing_ms} ms · ID ${esc(r.id.slice(0, 8))}</p>`;
 
