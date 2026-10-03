@@ -24,6 +24,13 @@ def test_model_forward_with_and_without_meta():
     assert logits.shape == (2, len(CLASSES)) and fmap.dim() == 4
 
 
+def test_backbones_with_conv_head():
+    for arch in ("mobilenetv3_large_100", "efficientnet_b0"):
+        m = DermNet(arch, len(CLASSES)).eval()
+        assert m(torch.randn(1, 3, 64, 64)).shape == (1, len(CLASSES))
+        assert m.embed(torch.randn(1, 3, 64, 64)).shape[1] == m.head.in_features - 64
+
+
 def test_class_weights_favour_rare_classes():
     w = class_weights(np.array([5] * 90 + [4] * 10))
     assert w[4] > w[5] and w[0] == 0

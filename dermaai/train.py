@@ -50,8 +50,8 @@ def collect_logits(model: nn.Module, loader: DataLoader, device: torch.device, t
     for x, meta, y in loader:
         x, meta = x.to(device), meta.to(device)
         logits = model(x, meta)
-        if tta:
-            views = [x.flip(3), x.flip(2), x.flip(2).flip(3)]
+        if tta:  # same five views as inference
+            views = [x.flip(3), x.flip(2), x.flip(2).flip(3), x.transpose(2, 3)]
             logits = torch.stack([logits] + [model(v, meta) for v in views]).mean(0)
         all_logits.append(logits.float().cpu())
         all_labels.append(y)
@@ -77,8 +77,23 @@ def cosine_with_warmup(optimizer, warmup_steps: int, total_steps: int):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, fn)
 
 
+def _per_source(df, probs: np.ndarray, labels: np.ndarray) -> dict:
+    """Metrics per data source (e.g. hospital), when the CSV has a 'source' column."""
+    if "source" not in df.columns:
+        return {}
+    out = {}
+    for src in sorted(df["source"].dropna().unique()):
+        m = (df["source"] == src).to_numpy()
+        if m.sum() >= 20:
+            r = compute_metrics(probs[m], labels[m])
+            out[str(src)] = {k: r[k] for k in ("n", "accuracy", "balanced_accuracy", "malignant_auc", "melanoma_auc") if k in r}
+    return out
+
+
 def train(args: argparse.Namespace) -> dict:
     seed_everything(args.seed)
+    if args.threads:
+        torch.set_num_threads(args.threads)
     device = pick_device(args.device)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -91,9 +106,9 @@ def train(args: argparse.Namespace) -> dict:
     pin = device.type == "cuda"
     train_labels = train_df["label"].to_numpy()
     train_loader = DataLoader(
-        LesionDataset(train_df, train_transform(args.img_size)), batch_size=args.batch_size,
+        LesionDataset(train_df, train_transform(args.img_size), meta_dropout=args.meta_dropout), batch_size=args.batch_size,
         sampler=balanced_sampler(train_labels, args.balance_power), num_workers=args.workers,
-        pin_memory=pin, drop_last=len(train_df) > args.batch_size,
+        pin_memory=pin, drop_last=len(train_df) > args.batch_size, persistent_workers=args.workers > 0,
     )
     ev = eval_transform(args.img_size)
     val_loader = DataLoader(LesionDataset(val_df, ev), batch_size=args.batch_size, num_workers=args.workers, pin_memory=pin)
@@ -114,12 +129,20 @@ def train(args: argparse.Namespace) -> dict:
     use_amp = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-    best_score, best_epoch, history = -1.0, -1, []
-    best_path = out_dir / "best.pt"
-    for epoch in range(1, args.epochs + 1):
+    best_score, best_epoch, history, start_epoch = -1.0, -1, [], 1
+    best_path, last_path = out_dir / "best.pt", out_dir / "last.pt"
+    if args.resume and last_path.exists():
+        st = torch.load(last_path, map_location=device, weights_only=False)
+        model.load_state_dict(st["state_dict"]); optimizer.load_state_dict(st["optimizer"])
+        scheduler.load_state_dict(st["scheduler"]); scaler.load_state_dict(st["scaler"])
+        best_score, best_epoch, history, start_epoch = st["best_score"], st["best_epoch"], st["history"], st["epoch"] + 1
+        print(f"[train] resumed after epoch {st['epoch']} (best {best_epoch})")
+    deadline = time.time() + args.max_hours * 3600 if args.max_hours else None
+    n_batches = len(train_loader)
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         t0, running, seen = time.time(), 0.0, 0
-        for x, meta, y in train_loader:
+        for step, (x, meta, y) in enumerate(train_loader, 1):
             x, meta, y = x.to(device, non_blocking=True), meta.to(device), y.to(device)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, enabled=use_amp):
@@ -132,6 +155,10 @@ def train(args: argparse.Namespace) -> dict:
             scheduler.step()
             running += loss.item() * len(y)
             seen += len(y)
+            if args.log_every and step % args.log_every == 0:
+                el = time.time() - t0
+                print(f"  [epoch {epoch:02d}] {step}/{n_batches} loss={running / seen:.4f} "
+                      f"{seen / el:.1f} img/s, epoch ETA {(n_batches - step) * el / step / 60:.1f} min", flush=True)
 
         logits, labels = collect_logits(model, val_loader, device)
         m = compute_metrics(torch.softmax(logits, 1).numpy(), labels.numpy())
@@ -140,12 +167,19 @@ def train(args: argparse.Namespace) -> dict:
         history.append({"epoch": epoch, "loss": running / max(1, seen), **{k: m[k] for k in ("balanced_accuracy", "macro_f1")},
                         "melanoma_auc": m.get("melanoma_auc")})
         print(f"[epoch {epoch:02d}] loss={running / max(1, seen):.4f} val_bacc={m['balanced_accuracy']:.4f} "
-              f"val_f1={m['macro_f1']:.4f} mel_auc={m.get('melanoma_auc', float('nan')):.4f} ({time.time() - t0:.0f}s)")
+              f"val_f1={m['macro_f1']:.4f} mel_auc={m.get('melanoma_auc', float('nan')):.4f} ({time.time() - t0:.0f}s)", flush=True)
         if score > best_score:
             best_score, best_epoch = score, epoch
             save_checkpoint(best_path, model, classes=CLASSES, img_size=args.img_size)
-        elif epoch - best_epoch >= args.patience:
+        torch.save({"state_dict": model.state_dict(), "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(),
+                    "scaler": scaler.state_dict(), "epoch": epoch, "best_score": best_score, "best_epoch": best_epoch,
+                    "history": history}, last_path)
+        (out_dir / "history.json").write_text(json.dumps(history, indent=2))
+        if epoch - best_epoch >= args.patience:
             print(f"[train] early stopping at epoch {epoch} (best {best_epoch})")
+            break
+        if deadline and time.time() + (time.time() - t0) > deadline:
+            print(f"[train] time budget reached after epoch {epoch} (best {best_epoch})")
             break
 
     model.load_state_dict(torch.load(best_path, map_location=device, weights_only=False)["state_dict"])
@@ -159,7 +193,11 @@ def train(args: argparse.Namespace) -> dict:
     val_feats, _ = collect_features(model, val_loader, device)
     ood_threshold = float(np.percentile(mahalanobis_score(val_feats, density).numpy(), 95))
     test_logits, test_labels = collect_logits(model, test_loader, device, tta=True)
-    test_metrics = compute_metrics(torch.softmax(test_logits / temperature, 1).numpy(), test_labels.numpy())
+    test_probs = torch.softmax(test_logits / temperature, 1).numpy()
+    test_metrics = compute_metrics(test_probs, test_labels.numpy())
+    test_metrics["per_source"] = _per_source(test_df, test_probs, test_labels.numpy())
+    test_metrics["splits"] = {"train": len(train_df), "val": len(val_df), "test": len(test_df)}
+    test_metrics["arch"], test_metrics["img_size"] = args.arch, args.img_size
     print(f"[test] temperature={temperature:.3f} " + json.dumps({k: v for k, v in test_metrics.items()
                                                                     if k not in ("confusion_matrix",)}, indent=2))
 
@@ -197,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="auto")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--version", default="1.0.0")
+    p.add_argument("--meta-dropout", type=float, default=0.3, help="per-field probability of hiding metadata in training")
+    p.add_argument("--resume", action="store_true", help="continue from <out>/last.pt")
+    p.add_argument("--max-hours", type=float, default=0, help="stop starting new epochs after this budget")
+    p.add_argument("--threads", type=int, default=0, help="torch CPU threads (0 = default)")
+    p.add_argument("--log-every", type=int, default=50, help="progress line every N batches (0 = off)")
     return p
 
 

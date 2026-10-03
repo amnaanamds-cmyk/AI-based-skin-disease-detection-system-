@@ -5,6 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from dermaai.config import CLASSES
+
 from dermaai.api import main
 from dermaai.referrals import CaseStore
 
@@ -55,7 +57,7 @@ def test_full_referral_lifecycle(client, lesion_rgb):
 
     fhir = client.get(f"/api/clinician/cases/{case_id}/fhir", headers=AUTH).json()
     types = [e["resource"]["resourceType"] for e in fhir["entry"]]
-    assert fhir["resourceType"] == "Bundle" and types.count("Observation") == 7
+    assert fhir["resourceType"] == "Bundle" and types.count("Observation") == len(CLASSES)
     assert {"Patient", "DiagnosticReport", "Media"} <= set(types)
     report = next(e["resource"] for e in fhir["entry"] if e["resource"]["resourceType"] == "DiagnosticReport")
     assert report["status"] == "final" and "Compound naevus" in report["conclusion"]

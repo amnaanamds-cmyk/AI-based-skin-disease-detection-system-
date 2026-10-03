@@ -5,6 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from dermaai.config import CLASSES
+
 from dermaai.api.main import app
 
 
@@ -21,7 +23,7 @@ def png(rgb: np.ndarray) -> bytes:
 
 def test_health_and_metadata_endpoints(client):
     assert client.get("/api/health").json()["status"] == "ok"
-    assert len(client.get("/api/conditions").json()["conditions"]) == 7
+    assert len(client.get("/api/conditions").json()["conditions"]) == len(CLASSES)
     assert "back" in client.get("/api/options").json()["localization"]
     assert client.get("/").status_code == 200
 

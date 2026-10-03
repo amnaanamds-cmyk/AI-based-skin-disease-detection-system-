@@ -10,6 +10,28 @@ import torch.nn as nn
 
 from .config import CLASSES, META_DIM
 
+# ImageNet weights mirrored on timm's GitHub releases. Used when the Hugging Face Hub (timm's
+# default source) is unreachable, e.g. on locked-down training machines.
+_GH = "https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-weights/"
+GITHUB_WEIGHTS = {
+    "efficientnet_b0": _GH + "efficientnet_b0_ra-3dd342df.pth",
+    "efficientnet_b2": _GH + "efficientnet_b2_ra-bcdf34b7.pth",
+    "mobilenetv3_large_100": _GH + "mobilenetv3_large_100_ra-f55367f5.pth",
+    "resnet50": _GH + "resnet50_ram-a26f946b.pth",
+}
+
+
+def _pretrained_overlay(arch: str) -> dict | None:
+    url = GITHUB_WEIGHTS.get(arch)
+    if not url:
+        return None
+    cache = Path(torch.hub.get_dir()) / "dermaai"
+    cache.mkdir(parents=True, exist_ok=True)
+    dst = cache / url.rsplit("/", 1)[1]
+    if not dst.exists():
+        torch.hub.download_url_to_file(url, str(dst), progress=False)
+    return {"file": str(dst)}
+
 
 class DermNet(nn.Module):
     """CNN backbone whose pooled features are fused with patient metadata.
@@ -29,8 +51,12 @@ class DermNet(nn.Module):
         super().__init__()
         self.arch = arch
         self.use_meta = use_meta
-        self.backbone = timm.create_model(arch, pretrained=pretrained, num_classes=0, global_pool="avg")
-        feat_dim = self.backbone.num_features
+        overlay = _pretrained_overlay(arch) if pretrained else None
+        self.backbone = timm.create_model(arch, pretrained=pretrained, num_classes=0, global_pool="avg",
+                                          **({"pretrained_cfg_overlay": overlay} if overlay else {}))
+        # Some backbones (e.g. MobileNetV3) add a conv head after the pooled features, so the
+        # pre-logits width can differ from num_features.
+        feat_dim = getattr(self.backbone, "head_hidden_size", None) or self.backbone.num_features
         meta_out = 0
         if use_meta:
             meta_out = 64

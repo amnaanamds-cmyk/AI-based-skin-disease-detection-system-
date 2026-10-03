@@ -37,7 +37,7 @@ def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
         "macro_f1": float(f1_score(labels, preds, average="macro", labels=present, zero_division=0)),
         "ece": expected_calibration_error(probs, labels),
         "per_class_recall": {},
-        "confusion_matrix": confusion_matrix(labels, preds, labels=list(range(len(CLASSES)))).tolist(),
+        "confusion_matrix": confusion_matrix(labels, preds, labels=list(range(probs.shape[1]))).tolist(),
     }
     for c in present:
         out["per_class_recall"][CLASSES[c]] = float((preds[labels == c] == c).mean())
@@ -48,7 +48,7 @@ def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
         except ValueError:
             pass
 
-    mal_idx = [CLASSES.index(c) for c in MALIGNANT]
+    mal_idx = [CLASSES.index(c) for c in MALIGNANT if CLASSES.index(c) < probs.shape[1]]
     is_mal = np.isin(labels, mal_idx)
     mal_score = probs[:, mal_idx].sum(1)
     if 0 < is_mal.sum() < len(labels):

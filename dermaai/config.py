@@ -6,10 +6,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# HAM10000 / ISIC 2018 Task 3 diagnostic categories.
-CLASSES: list[str] = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
+# ISIC 2019 diagnostic categories: the HAM10000 / ISIC 2018 seven plus squamous cell carcinoma.
+# Order matters (index = model output); "scc" is appended so 7-class checkpoints keep their indices.
+CLASSES: list[str] = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc", "scc"]
 
-MALIGNANT: frozenset[str] = frozenset({"mel", "bcc", "akiec"})
+MALIGNANT: frozenset[str] = frozenset({"mel", "bcc", "akiec", "scc"})
 
 CONDITIONS: dict[str, dict] = {
     "akiec": {
@@ -53,6 +54,13 @@ CONDITIONS: dict[str, dict] = {
         "risk": "low",
         "summary": "A common mole. Most people have 10-40.",
         "action": "No urgent action. Re-check monthly using the ABCDE rule and photograph for comparison.",
+    },
+    "scc": {
+        "name": "Squamous cell carcinoma",
+        "malignancy": "malignant",
+        "risk": "high",
+        "summary": "The second most common skin cancer: a scaly, crusted or wart-like growth, often on sun-exposed skin. Can spread if untreated.",
+        "action": "See a dermatologist within 2 weeks. Early treatment is usually curative.",
     },
     "vasc": {
         "name": "Vascular lesion",

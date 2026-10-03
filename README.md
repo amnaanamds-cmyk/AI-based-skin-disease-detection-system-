@@ -39,7 +39,7 @@ looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage le
 | Stops at a prediction | **Closes the loop**: body-map follow-up, a clinician queue sorted by AI urgency, and FHIR export to the hospital record |
 | Notebook | Production REST API, responsive web app, Docker, ONNX export for mobile/edge, CI tests |
 
-## Conditions (HAM10000 / ISIC 2018 taxonomy)
+## Conditions (ISIC 2019 taxonomy)
 
 | Code | Condition | Class |
 |---|---|---|
@@ -50,6 +50,7 @@ looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage le
 | `bkl` | Benign keratosis | benign |
 | `df` | Dermatofibroma | benign |
 | `vasc` | Vascular lesion | benign |
+| `scc` | Squamous cell carcinoma | malignant |
 
 ## Quick start
 
@@ -70,19 +71,27 @@ docker compose up --build        # serves ./models/dermaai.pt if present
 
 ## Training a real model
 
-1. Download **HAM10000** (Harvard Dataverse, doi:10.7910/DVN/DBW86T) into `data/`:
-   `HAM10000_metadata.csv`, `HAM10000_images_part_1/`, `HAM10000_images_part_2/`.
-2. Train (a GPU is strongly recommended):
+1. Prepare **ISIC 2019**: 25,331 dermoscopy images in 8 classes, combining HAM10000 (Vienna), BCN20000
+   (Barcelona) and MSK (New York). The script streams the official 9.8 GB archive and keeps resized copies only
+   (about 550 MB, about 20 minutes, resumable):
 
 ```bash
-python -m dermaai.train \
-  --csv data/HAM10000_metadata.csv \
-  --images data/HAM10000_images_part_1 data/HAM10000_images_part_2 \
-  --arch efficientnet_b3 --img-size 300 --epochs 30 --batch-size 32 --pretrained \
-  --out models
+python scripts/prepare_isic2019.py --out data/isic2019 --size 256
 ```
 
-This produces `models/dermaai.pt` (weights, calibration temperature, test metrics) and `models/metrics.json`.
+2. Train. `--pretrained` loads ImageNet weights, from GitHub if the Hugging Face Hub is unreachable. On a GPU use a
+   bigger model and resolution. The command below is the CPU recipe that produced the bundled results:
+
+```bash
+python -m dermaai.train --csv data/isic2019/metadata.csv --images data/isic2019/images \
+  --arch efficientnet_b0 --pretrained --img-size 192 --epochs 10 --batch-size 32 --lr 2e-4 \
+  --workers 2 --threads 4 --out models
+# GPU: --arch efficientnet_b2 --img-size 260 --epochs 25 --batch-size 64
+# interrupted? add --resume; cap wall-clock time with --max-hours
+```
+
+This produces `models/dermaai.pt` (weights, calibration temperature, OOD detector, test metrics) and
+`models/metrics.json`. HAM10000 alone also works: pass its `HAM10000_metadata.csv` and image folders.
 
 3. Serve it with `DERMAAI_CHECKPOINT=models/dermaai.pt uvicorn dermaai.api.main:app`.
 4. Optional: `python -m dermaai.evaluate --checkpoint models/dermaai.pt --csv external.csv --images ext/`
@@ -93,8 +102,10 @@ Any CSV with columns `image`/`image_id`, `dx` and optionally `lesion_id`, `age`,
 
 **What the training pipeline does:** stratified, lesion-grouped train/val/test split · square-root class-balanced
 sampling plus a mild class-weighted loss · heavy dermoscopy augmentation (rotation, flips, colour jitter, blur,
-random erasing) · AdamW with a 10× learning rate on the head, warmup and cosine decay · AMP on GPU · early stopping
-on `balanced_accuracy + 0.5 × melanoma_AUC` · flip-TTA evaluation · temperature calibration on the validation set.
+random erasing) · per-field metadata dropout so the model works without age/sex/site · AdamW with a 10× learning
+rate on the head, warmup and cosine decay · AMP on GPU · per-epoch resumable checkpoints · early stopping on
+`balanced_accuracy + 0.5 × melanoma_AUC` · 5-view TTA evaluation · temperature calibration and OOD detector fitting
+on held-out data · per-source (hospital) test metrics when the CSV has a `source` column.
 
 **Reported metrics:** accuracy, balanced accuracy, macro-F1, macro AUC, per-class recall, confusion matrix,
 ECE (calibration), malignant-vs-benign AUC, melanoma AUC, and **specificity at 90% melanoma sensitivity**,

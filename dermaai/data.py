@@ -78,9 +78,12 @@ def split_by_lesion(df: pd.DataFrame, val_frac: float = 0.15, test_frac: float =
 
 
 class LesionDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, transform):
+    def __init__(self, df: pd.DataFrame, transform, meta_dropout: float = 0.0):
         self.df = df.reset_index(drop=True)
         self.transform = transform
+        # Users often skip age/sex/site; dropping fields during training keeps the model
+        # accurate when they are missing instead of relying on them.
+        self.meta_dropout = meta_dropout
 
     def __len__(self) -> int:
         return len(self.df)
@@ -88,7 +91,10 @@ class LesionDataset(Dataset):
     def __getitem__(self, i: int):
         row = self.df.iloc[i]
         img = Image.open(row["path"]).convert("RGB")
-        meta = encode_metadata(row.get("age"), row.get("sex"), row.get("localization"))
+        fields = [row.get("age"), row.get("sex"), row.get("localization")]
+        if self.meta_dropout:
+            fields = [None if np.random.random() < self.meta_dropout else f for f in fields]
+        meta = encode_metadata(*fields)
         return self.transform(img), meta, int(row["label"])
 
 
