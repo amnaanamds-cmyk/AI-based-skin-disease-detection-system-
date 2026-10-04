@@ -1,6 +1,7 @@
 """Export a checkpoint to ONNX for mobile / edge deployment.
 
-    python -m dermaai.export --checkpoint models/dermaai.pt --out models/dermaai.onnx
+    python -m dermaai.export --out model.onnx                       # the app's current model
+    python -m dermaai.export --checkpoint models/trained/model_v1/model.pt --out model_v1.onnx
 """
 
 from __future__ import annotations
@@ -24,11 +25,12 @@ class _Wrapper(torch.nn.Module):
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--checkpoint", default=None, help="default: models/trained/<CURRENT>/model.pt")
     p.add_argument("--out", required=True)
     p.add_argument("--opset", type=int, default=17)
     a = p.parse_args()
-    model, info = load_checkpoint(a.checkpoint)
+    from .model_store import model_path
+    model, info = load_checkpoint(a.checkpoint or model_path())
     size = int(info.get("img_size", 224))
     wrapper = _Wrapper(model, float(info.get("temperature") or 1.0)).eval()
     torch.onnx.export(

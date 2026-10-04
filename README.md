@@ -56,64 +56,63 @@ looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage le
 
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision   # or a CUDA build
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 
-# Run the app. With no checkpoint it starts in clearly-labelled DEMO mode.
-uvicorn dermaai.api.main:app --reload
-# open http://localhost:8000   ·   API docs at http://localhost:8000/docs
+python app.py                    # open http://localhost:8000  (API docs at /docs)
 ```
 
-Docker:
+The app loads the trained model named in `models/trained/CURRENT`. If there is no trained model, it runs in a
+clearly labelled demo mode.
+
+Docker: `docker compose up --build` (mounts `./models` read-only).
+
+## How the AI is organised
+
+```
+data/raw/  ──►  training/train.py  ──►  models/trained/model_vN/  ──►  app.py / prediction/predict.py
+(your data)     (the only place         (versioned; CURRENT names       (load the model, preprocess the
+                 that trains)             the one the app serves)          same way, predict; never train)
+```
+
+| Folder | Purpose | Guide |
+|---|---|---|
+| `data/` | datasets: `raw/` (yours), `processed/` (automatic cache), `splits.csv` (stable train/val/test) | [data/README.md](data/README.md) |
+| `training/` | training module: `config.py` (all settings), `train.py`, `dataset.py`, `preprocessing.py`, `calibration.py`, `evaluate.py`, `manage_models.py` | [training/README.md](training/README.md) |
+| `models/` | `trained/model_v1`, `model_v2`, … plus `CURRENT` | [models/README.md](models/README.md) |
+| `prediction/` | `predict.py`: load the current model and classify images (CLI or Python) | below |
+| `dermaai/` | the app (API, web UI, skin care, assistant, referrals) and the code shared with training: model architecture (`model.py`), image preprocessing (`preprocessing.py`), model store (`model_store.py`) | |
+| `app.py` | starts the web app | |
+
+### Train or retrain
 
 ```bash
-docker compose up --build        # serves ./models/dermaai.pt if present
+python scripts/prepare_isic2019.py              # optional: download ISIC 2019 into data/raw (≈550 MB, ≈20 min)
+python training/train.py                        # train on data/raw -> models/trained/model_vN
+python training/train.py --init-from current    # retrain by fine-tuning the current model on more data
+python training/manage_models.py list           # versions and scores; * = used by the app
+python training/manage_models.py use model_v1   # roll back
 ```
 
-## Training a real model
+To train on your own data, put it in `data/raw/` as described in [data/README.md](data/README.md) (one folder per
+class, or `labels.csv`) and run `python training/train.py`. Preprocessing, splitting, training, calibration,
+evaluation, versioned saving and switching the app to the new model all happen automatically. `app.py` never needs
+editing.
 
-1. Prepare **ISIC 2019**: 25,331 dermoscopy images in 8 classes, combining HAM10000 (Vienna), BCN20000
-   (Barcelona) and MSK (New York). The script streams the official 9.8 GB archive and keeps resized copies only
-   (about 550 MB, about 20 minutes, resumable):
+### Predict without the web app
 
 ```bash
-python scripts/prepare_isic2019.py --out data/isic2019 --size 256
+python prediction/predict.py photo.jpg --age 54 --sex female --site back
 ```
 
-2. Train. `--pretrained` loads ImageNet weights, from GitHub if the Hugging Face Hub is unreachable. On a GPU use a
-   bigger model and resolution. The command below is the CPU recipe that produced the bundled results:
-
-```bash
-python -m dermaai.train --csv data/isic2019/metadata.csv --images data/isic2019/images \
-  --arch efficientnet_b0 --pretrained --img-size 192 --epochs 10 --batch-size 32 --lr 2e-4 \
-  --workers 2 --threads 4 --out models
-# GPU: --arch efficientnet_b2 --img-size 260 --epochs 25 --batch-size 64
-# interrupted? add --resume; cap wall-clock time with --max-hours
+```python
+from prediction.predict import load_model, predict
+model = load_model()                         # current version
+print(predict(model, "photo.jpg")["top_class"])
 ```
 
-This produces `models/dermaai.pt` (weights, calibration temperature, OOD detector, test metrics) and
-`models/metrics.json`. HAM10000 alone also works: pass its `HAM10000_metadata.csv` and image folders.
+### Bundled model
 
-3. Serve it with `DERMAAI_CHECKPOINT=models/dermaai.pt uvicorn dermaai.api.main:app`.
-4. Optional: `python -m dermaai.evaluate --checkpoint models/dermaai.pt --csv external.csv --images ext/`
-   to validate on external data (ISIC 2019, PAD-UFES-20, Derm7pt), and
-   `python -m dermaai.export --checkpoint models/dermaai.pt --out models/dermaai.onnx` for mobile.
-
-Any CSV with columns `image`/`image_id`, `dx` and optionally `lesion_id`, `age`, `sex`, `localization` works.
-
-**What the training pipeline does:** stratified, lesion-grouped train/val/test split · square-root class-balanced
-sampling plus a mild class-weighted loss · heavy dermoscopy augmentation (rotation, flips, colour jitter, blur,
-random erasing) · per-field metadata dropout so the model works without age/sex/site · AdamW with a 10× learning
-rate on the head, warmup and cosine decay · AMP on GPU · per-epoch resumable checkpoints · early stopping on
-`balanced_accuracy + 0.5 × melanoma_AUC` · 5-view TTA evaluation · temperature calibration and OOD detector fitting
-on held-out data · per-source (hospital) test metrics when the CSV has a `source` column.
-
-**Reported metrics:** accuracy, balanced accuracy, macro-F1, macro AUC, per-class recall, confusion matrix,
-ECE (calibration), malignant-vs-benign AUC, melanoma AUC, and **specificity at 90% melanoma sensitivity**,
-the operating point that matters for screening.
-
-> No figures are claimed here: the bundled code has not been trained on real data in this repository.
-> For reference, ISIC 2018 Task 3 leaders reached ≈0.88 balanced accuracy with large ensembles and external
-> data. Report your own numbers from `models/metrics.json` on the lesion-grouped test split.
+RESULTS_PLACEHOLDER
 
 ## API
 
@@ -177,7 +176,7 @@ put the service behind HTTPS and replace the shared clinician token with your id
 
 ### Out-of-distribution detection
 
-After training, `dermaai.train` fits class-conditional Gaussians with a shared Ledoit-Wolf covariance to the
+After training, `training/train.py` fits class-conditional Gaussians with a shared Ledoit-Wolf covariance to the
 backbone features of the training images. It then sets a threshold at the 95th percentile of Mahalanobis distances
 on the validation images, which are held out from that fit. At inference, an image beyond the threshold is flagged
 `ood.unfamiliar`. A low or moderate result is replaced by a "doesn't look like a typical lesion photo" retake
@@ -190,7 +189,8 @@ Energy scores were tried first and caught none, because weak models stay confide
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DERMAAI_CHECKPOINT` | none | Path to trained `.pt`. Unset or missing means demo mode |
+| `DERMAAI_MODELS_DIR` | `models/trained` | Where model versions and `CURRENT` live |
+| `DERMAAI_CHECKPOINT` | none | Force a specific model file instead of `CURRENT` |
 | `DERMAAI_DEVICE` | `auto` | `cuda`, `mps` or `cpu` |
 | `DERMAAI_TTA` | `1` | 5-view test-time augmentation |
 | `DERMAAI_MEL_THRESHOLD` | `0.15` | Melanoma probability that triggers urgent referral |
@@ -207,24 +207,31 @@ Tune the thresholds on your validation set to reach the sensitivity you need.
 ## Project layout
 
 ```
-dermaai/
-  config.py      taxonomy, clinical knowledge base, settings
-  model.py       DermNet: timm CNN backbone fused with metadata MLP
-  data.py        CSV loading, lesion-grouped splits, balanced sampling
-  transforms.py  augmentation
-  train.py       training CLI          evaluate.py  evaluation CLI       export.py  ONNX export
-  metrics.py     clinical metrics, ECE, temperature scaling
-  quality.py     image quality gate    abcde.py     segmentation + ABCDE  explain.py Grad-CAM
-  inference.py   end-to-end analysis and triage
-  skin_analysis.py  facial/skin cosmetic analysis       skincare.py  routine engine + product catalogue
-  progress.py    before/after lesion change tracking    assistant.py red flags, knowledge base, Claude
-  referrals.py   consented case store, clinician queue, FHIR R4 export
-  api/main.py    FastAPI service
-web/             responsive app: lesion check, live camera coach, skin care, tracking, body map, assistant,
-                 history + referrals, print report; clinician.html is the clinician dashboard
-scripts/         synthetic dataset generator (pipeline smoke tests only)
-tests/           unit, API and end-to-end train→serve tests
-docs/PITCH.md    competition pitch, impact and business model
+app.py              start the web app (never trains)
+data/               datasets — see data/README.md
+training/           training module — see training/README.md
+  config.py         ALL training settings (paths, model type, image size, epochs, batch size, LR, splits, seed)
+  train.py          train / retrain -> models/trained/model_vN, evaluate, promote
+  dataset.py        read data/raw (class folders or labels.csv), class names, stable lesion-grouped splits
+  preprocessing.py  check, auto-rotate and cache images
+  calibration.py    temperature scaling + out-of-distribution detector
+  evaluate.py       metrics and reports (also usable on its own)
+  manage_models.py  list versions, switch / roll back, import
+models/trained/     model_v1, model_v2, ... and CURRENT — see models/README.md
+prediction/
+  predict.py        load the current model and classify images (CLI + Python API)
+dermaai/            the application and the code it shares with training
+  preprocessing.py  image -> model input (identical in training and prediction; parameters saved per model)
+  model.py          DermNet: timm CNN backbone fused with metadata MLP
+  model_store.py    where versions live and which one is current
+  inference.py      quality gate -> calibrated prediction -> triage -> explanation
+  config.py         class descriptions, app settings
+  quality.py  abcde.py  explain.py  skin_analysis.py  skincare.py  progress.py  assistant.py  referrals.py
+  api/main.py       FastAPI service (reloads the model automatically when CURRENT changes)
+web/                responsive web app and clinician dashboard
+scripts/            prepare_isic2019.py (download ISIC 2019), make_synthetic_dataset.py (tiny test data)
+tests/              unit, API and end-to-end training tests
+docs/PITCH.md       competition pitch
 ```
 
 ## Testing

@@ -3,11 +3,24 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
-data/
-models/
-*.pt
-*.pth
-*.onnx
 .DS_Store
 .env
 *.db
+*.onnx
+*.pth
+
+# Datasets and caches stay local (large; often licensed). Keep the folder structure and docs.
+data/*
+!data/README.md
+!data/raw/
+!data/processed/
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# In-progress training state is temporary; trained versions in models/trained/ are kept.
+models/checkpoints/
+models/*.pt
+*.pt
+!models/trained/**/model.pt

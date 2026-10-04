@@ -1,9 +1,10 @@
-"""Generate a small synthetic lesion dataset in HAM10000 CSV format.
+"""Generate a small synthetic lesion dataset in the class-folder layout of data/README.md.
 
 Only for smoke-testing the training pipeline end to end — synthetic images
 carry no medical meaning. Real training needs HAM10000 / ISIC data.
 
     python scripts/make_synthetic_dataset.py --out data/synthetic --per-class 20
+    python training/train.py --data data/synthetic --model-type resnet18 --img-size 64 --epochs 2 --promote never
 """
 
 from __future__ import annotations
@@ -48,14 +49,15 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
     a = p.parse_args()
     out = Path(a.out)
-    (out / "images").mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(a.seed)
     rows = []
     for dx in CLASSES:
         for i in range(a.per_class):
             image_id = f"SYN_{dx}_{i:04d}"
-            cv2.imwrite(str(out / "images" / f"{image_id}.jpg"), cv2.cvtColor(make_image(dx, rng), cv2.COLOR_RGB2BGR))
-            rows.append({"lesion_id": f"L_{dx}_{i // 2:04d}", "image_id": image_id, "dx": dx, "dx_type": "synthetic",
+            (out / dx).mkdir(exist_ok=True)
+            cv2.imwrite(str(out / dx / f"{image_id}.jpg"), cv2.cvtColor(make_image(dx, rng), cv2.COLOR_RGB2BGR))
+            rows.append({"image": image_id, "lesion_id": f"L_{dx}_{i // 2:04d}",
                          "age": int(rng.integers(20, 85)), "sex": rng.choice(["male", "female"]),
                          "localization": rng.choice(LOCS)})
     with open(out / "metadata.csv", "w", newline="") as f:

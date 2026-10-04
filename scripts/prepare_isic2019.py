@@ -4,7 +4,8 @@ The 9.8 GB archive is never written to disk: the zip is read remotely with
 HTTP range requests and each image is resized on the fly (shorter side
 ``--size`` px), which needs only a few hundred MB. Re-running resumes.
 
-    python scripts/prepare_isic2019.py --out data/isic2019 --size 256 --workers 16
+    python scripts/prepare_isic2019.py      # writes data/raw/images/ + data/raw/labels.csv
+    python training/train.py                # then train on it
 
 ISIC 2019 combines HAM10000 (Vienna), BCN20000 (Barcelona) and MSK (New York).
 Data licence: CC BY-NC 4.0, cite Tschandl 2018, Codella 2018 and Combalia 2019.
@@ -105,7 +106,7 @@ def _csv(url: str) -> list[dict]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--out", default="data/isic2019")
+    p.add_argument("--out", default="data/raw")
     p.add_argument("--size", type=int, default=256, help="shorter side in pixels")
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--limit", type=int, default=0, help="only the first N images (for testing)")
@@ -124,7 +125,7 @@ def main() -> None:
         m = meta.get(g["image"]) or meta.get(image_id) or {}
         lesion = (m.get("lesion_id") or "").strip() or image_id
         source = "HAM10000" if lesion.startswith("HAM") else "BCN20000" if lesion.startswith("BCN") else "MSK"
-        rows.append({"image": image_id, "dx": dx, "lesion_id": lesion, "age": m.get("age_approx", ""),
+        rows.append({"image": image_id, "label": dx, "lesion_id": lesion, "age": m.get("age_approx", ""),
                      "sex": m.get("sex", ""), "localization": SITES.get(m.get("anatom_site_general", ""), ""),
                      "source": source})
     if a.limit:
@@ -150,14 +151,14 @@ def main() -> None:
 
     present = {f.stem for f in img_dir.glob("*.jpg")}
     rows = [r for r in rows if r["image"] in present]
-    with open(out / "metadata.csv", "w", newline="") as f:
+    with open(out / "labels.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
     counts: dict[str, int] = {}
     for r in rows:
-        counts[r["dx"]] = counts.get(r["dx"], 0) + 1
-    print(f"wrote {out / 'metadata.csv'}: {len(rows)} images, {errors} errors, classes {dict(sorted(counts.items()))}")
+        counts[r["label"]] = counts.get(r["label"], 0) + 1
+    print(f"wrote {out / 'labels.csv'}: {len(rows)} images, {errors} errors, classes {dict(sorted(counts.items()))}")
 
 
 if __name__ == "__main__":

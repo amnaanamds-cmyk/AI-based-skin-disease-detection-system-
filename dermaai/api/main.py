@@ -11,6 +11,7 @@ from typing import Literal
 import numpy as np
 import hmac
 import os
+import threading
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from .. import __version__
-from ..config import CLASSES, CONDITIONS, LOCALIZATIONS, SEXES
+from .. import model_store
+from ..config import LOCALIZATIONS, SEXES, condition_info, get_settings
 from ..assistant import chat
 from ..inference import DISCLAIMER, Predictor
 from ..progress import compare_lesions
@@ -43,15 +45,36 @@ MAX_PIXELS = 40_000_000
 _lock = asyncio.Lock()
 
 
-@lru_cache(maxsize=1)
+_predictor: Predictor | None = None
+_predictor_key: tuple | None = None
+_predictor_lock = threading.Lock()
+
+
+def _model_key() -> tuple:
+    """Identifies the model the app should serve; changes when training promotes a new version."""
+    p = get_settings().checkpoint or model_store.model_path()
+    return (str(p), p.stat().st_mtime) if p and p.exists() else (None, None)
+
+
 def get_predictor() -> Predictor:
-    return Predictor()
+    """Load the current model once, and reload it automatically after a retraining run
+    switches models/trained/CURRENT (no restart, no code change)."""
+    global _predictor, _predictor_key
+    key = _model_key()
+    if _predictor is None or key != _predictor_key:
+        with _predictor_lock:
+            if _predictor is None or key != _predictor_key:
+                _predictor, _predictor_key = Predictor(), key
+    return _predictor
+
+
+get_predictor.cache_clear = lambda: globals().update(_predictor=None, _predictor_key=None)  # used by tests
 
 
 @app.get("/api/health")
 def health() -> dict:
     p = get_predictor()
-    return {"status": "ok", "version": __version__, "demo_mode": p.demo_mode}
+    return {"status": "ok", "version": __version__, "demo_mode": p.demo_mode, "model_version": p.version}
 
 
 @app.get("/api/model")
@@ -61,7 +84,8 @@ def model_info() -> dict:
 
 @app.get("/api/conditions")
 def conditions() -> dict:
-    return {"conditions": [{"code": c, **CONDITIONS[c]} for c in CLASSES], "disclaimer": DISCLAIMER}
+    p = get_predictor()
+    return {"conditions": [{"code": c, **condition_info(c, p.class_info)} for c in p.classes], "disclaimer": DISCLAIMER}
 
 
 @app.get("/api/options")

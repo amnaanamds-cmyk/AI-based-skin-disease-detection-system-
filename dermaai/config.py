@@ -71,6 +71,20 @@ CONDITIONS: dict[str, dict] = {
     },
 }
 
+def condition_info(code: str, custom: dict | None = None) -> dict:
+    """Display info for a class. Custom classes (added by training on new data) carry their own
+    info inside the model file; unknown ones get a neutral description instead of crashing."""
+    if custom and code in custom:
+        base = {"name": code.replace("_", " ").title(), "malignancy": "unknown", "risk": "moderate",
+                "summary": "", "action": "Ask a dermatologist to review this lesion."}
+        return {**base, **CONDITIONS.get(code, {}), **custom[code]}
+    if code in CONDITIONS:
+        return CONDITIONS[code]
+    return {"name": code.replace("_", " ").title(), "malignancy": "unknown", "risk": "moderate",
+            "summary": "A condition added by a custom-trained model.",
+            "action": "Ask a dermatologist to review this lesion."}
+
+
 SEXES: list[str] = ["male", "female"]
 
 LOCALIZATIONS: list[str] = [
@@ -87,6 +101,7 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 
 @dataclass
 class Settings:
+    # Explicit model file. Leave unset to serve models/trained/<CURRENT> (see dermaai.model_store).
     checkpoint: Path | None = field(
         default_factory=lambda: Path(p) if (p := os.getenv("DERMAAI_CHECKPOINT")) else None
     )

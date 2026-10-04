@@ -6,20 +6,23 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from pathlib import Path
+
 import numpy as np
 import torch
-from PIL import Image, ImageOps
+from PIL import Image
 
 from . import __version__
 from .abcde import compute_abcde
-from .config import CLASSES, CONDITIONS, IMAGENET_MEAN, IMAGENET_STD, MALIGNANT, Settings, get_settings
+from . import model_store
+from .config import CLASSES, MALIGNANT, Settings, condition_info, get_settings
+from .device import pick_device
 from .explain import grad_cam, overlay, to_data_url
 from .metadata import encode_metadata
 from .metrics import mahalanobis_score
 from .model import DermNet, load_checkpoint
 from .quality import assess_quality
-from .train import pick_device
-from .transforms import eval_transform
+from .preprocessing import PreprocessingParams, eval_transform, load_image
 
 DISCLAIMER = (
     "DermaAI is a decision-support and education tool, not a medical diagnosis. "
@@ -46,10 +49,12 @@ class Predictor:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
         self.device = pick_device(self.settings.device)
-        ckpt = self.settings.checkpoint
-        if ckpt and ckpt.exists():
+        ckpt = self.settings.checkpoint or model_store.model_path()
+        self.version = None
+        if ckpt and Path(ckpt).exists():
             self.model, info = load_checkpoint(ckpt, map_location="cpu")
             self.demo_mode = False
+            self.version = Path(ckpt).parent.name if model_store._VERSION_RE.match(Path(ckpt).parent.name) else None
         else:
             # Without trained weights the API still runs so the product can be demoed,
             # but every response is clearly flagged as coming from an untrained model.
@@ -59,12 +64,17 @@ class Predictor:
             self.demo_mode = True
         self.model.to(self.device)
         self.classes: list[str] = list(info.get("classes", CLASSES))
-        self.img_size = int(info.get("img_size", 224))
+        # Classes the triage treats as malignant/pre-malignant; stored per model so new classes work.
+        self.malignant = set(info.get("malignant_classes") or MALIGNANT) & set(self.classes)
+        self.class_info = info.get("class_info") or {}
+        self.preprocessing = PreprocessingParams.from_dict(info.get("preprocessing"), img_size=int(info.get("img_size", 224)))
+        self.img_size = self.preprocessing.img_size
         self.temperature = float(info.get("temperature") or 1.0)
         self.ood = info.get("ood")  # {"means", "precision", "threshold"} or None
         self.info = {
             "name": "DermaAI",
             "version": info.get("version", __version__),
+            "model_version": self.version,
             "arch": info["arch"],
             "img_size": self.img_size,
             "temperature": round(self.temperature, 4),
@@ -74,7 +84,7 @@ class Predictor:
             "trained_at": info.get("trained_at"),
             "metrics": {k: v for k, v in (info.get("metrics") or {}).items() if k != "confusion_matrix"},
         }
-        self.transform = eval_transform(self.img_size)
+        self.transform = eval_transform(self.preprocessing)
 
     @torch.no_grad()
     def _predict(self, x: torch.Tensor, meta: torch.Tensor) -> tuple[np.ndarray, float]:
@@ -100,7 +110,7 @@ class Predictor:
                 unfamiliar: bool | str = False) -> dict:
         s = self.settings
         p_mel = probs.get("mel", 0.0)
-        p_mal = sum(probs.get(c, 0.0) for c in MALIGNANT)
+        p_mal = sum(probs.get(c, 0.0) for c in self.malignant)
         reasons: list[str] = []
         if not quality_ok:
             level = "retake"
@@ -138,7 +148,7 @@ class Predictor:
 
     def analyze(self, image: Image.Image, age=None, sex=None, localization=None, explain: bool = True) -> dict:
         t0 = time.perf_counter()
-        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = load_image(image)
         rgb = np.asarray(image)
         quality = assess_quality(rgb)
 
@@ -159,7 +169,7 @@ class Predictor:
         if explain:
             top_idx = self.classes.index(ranked[0][0])
             cam = grad_cam(self.model, x, meta, top_idx)
-            view = _denormalize(x[0])
+            view = _denormalize(x[0], self.preprocessing)
             explanation = {
                 "target_class": ranked[0][0],
                 "heatmap": to_data_url(overlay(view, cam)),
@@ -168,7 +178,7 @@ class Predictor:
             }
 
         def entry(code: str, p: float) -> dict:
-            c = CONDITIONS[code]
+            c = condition_info(code, self.class_info)
             return {"code": code, "name": c["name"], "probability": round(p, 4),
                     "malignancy": c["malignancy"], "risk": c["risk"]}
 
@@ -176,11 +186,11 @@ class Predictor:
         return {
             "id": str(uuid.uuid4()),
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "model": {k: self.info[k] for k in ("name", "version", "arch", "demo_mode")},
+            "model": {k: self.info[k] for k in ("name", "version", "model_version", "arch", "demo_mode")},
             "quality": quality,
             "prediction": {
-                "top": {**entry(top, prob_map[top]), "summary": CONDITIONS[top]["summary"],
-                        "action": CONDITIONS[top]["action"]},
+                "top": {**entry(top, prob_map[top]), "summary": condition_info(top, self.class_info)["summary"],
+                        "action": condition_info(top, self.class_info)["action"]},
                 "probabilities": [entry(c, p) for c, p in ranked],
             },
             "uncertainty": {
@@ -199,8 +209,8 @@ class Predictor:
         }
 
 
-def _denormalize(t: torch.Tensor) -> np.ndarray:
-    mean = torch.tensor(IMAGENET_MEAN, device=t.device).view(3, 1, 1)
-    std = torch.tensor(IMAGENET_STD, device=t.device).view(3, 1, 1)
+def _denormalize(t: torch.Tensor, params: PreprocessingParams) -> np.ndarray:
+    mean = torch.tensor(params.mean, device=t.device).view(3, 1, 1)
+    std = torch.tensor(params.std, device=t.device).view(3, 1, 1)
     img = (t * std + mean).clamp(0, 1).permute(1, 2, 0).cpu().numpy()
     return (img * 255).astype(np.uint8)

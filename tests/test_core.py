@@ -1,11 +1,12 @@
 import numpy as np
 import torch
 
-from dermaai.config import CLASSES, META_DIM
-from dermaai.data import class_weights
+from dermaai.config import CLASSES, MALIGNANT, META_DIM
 from dermaai.metadata import encode_metadata
-from dermaai.metrics import compute_metrics, expected_calibration_error, fit_temperature
 from dermaai.model import DermNet
+from training.calibration import fit_temperature
+from training.dataset import class_weights
+from training.evaluate import compute_metrics, expected_calibration_error
 
 
 def test_metadata_encoding():
@@ -32,17 +33,19 @@ def test_backbones_with_conv_head():
 
 
 def test_class_weights_favour_rare_classes():
-    w = class_weights(np.array([5] * 90 + [4] * 10))
+    w = class_weights(np.array([5] * 90 + [4] * 10), num_classes=7, power=0.5)
     assert w[4] > w[5] and w[0] == 0
 
 
 def test_metrics_perfect_classifier():
     labels = np.repeat(np.arange(len(CLASSES)), 10)
     probs = np.eye(len(CLASSES))[labels] * 0.9 + 0.1 / len(CLASSES)
-    m = compute_metrics(probs, labels)
+    m = compute_metrics(probs, labels, CLASSES, sorted(MALIGNANT))
     assert m["balanced_accuracy"] == 1.0
     assert m["melanoma_auc"] == 1.0 and m["malignant_auc"] == 1.0
     assert m["melanoma_at_90_sensitivity"]["specificity"] == 1.0
+    assert m["macro_precision"] == m["macro_recall"] == m["macro_f1"] == 1.0
+    assert np.trace(m["confusion_matrix"]) == len(labels)
 
 
 def test_temperature_reduces_overconfidence():

@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # Small backbone keeps the test suite fast on CPU.
 os.environ.setdefault("DERMAAI_DEMO_ARCH", "resnet18")
 os.environ.setdefault("DERMAAI_DEVICE", "cpu")
+# Tests must not depend on whichever real model is in models/trained: point the app at an empty folder.
+os.environ["DERMAAI_MODELS_DIR"] = tempfile.mkdtemp(prefix="dermaai-test-models-")
 
 
 @pytest.fixture
