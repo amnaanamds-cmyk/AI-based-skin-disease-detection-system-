@@ -1,0 +1,206 @@
+{
+  "version_name": "model_v1",
+  "classes": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "vasc",
+    "scc"
+  ],
+  "malignant_classes": [
+    "mel",
+    "bcc",
+    "akiec",
+    "scc"
+  ],
+  "class_info": {},
+  "preprocessing": {
+    "img_size": 192,
+    "resize_ratio": 1.14,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "img_size": 192,
+  "temperature": 0.9874771237373352,
+  "trained_at": "2026-10-04",
+  "started_from": "ImageNet",
+  "best_epoch": 3,
+  "epochs_run": 7,
+  "dataset": {
+    "path": "data/raw",
+    "name": "ISIC 2019 (HAM10000 + BCN20000 + MSK)",
+    "images": 25327,
+    "per_split": {
+      "train": 18089,
+      "val": 3619,
+      "test": 3619
+    },
+    "per_class": {
+      "nv": 12873,
+      "mel": 4520,
+      "bcc": 3323,
+      "bkl": 2624,
+      "akiec": 867,
+      "scc": 628,
+      "vasc": 253,
+      "df": 239
+    },
+    "license": "CC BY-NC 4.0 (non-commercial)"
+  },
+  "training_config": {
+    "data_dir": "data/raw",
+    "processed_dir": "data/processed",
+    "processed_size": 288,
+    "class_names": [],
+    "min_images_per_class": 20,
+    "malignant_classes": [
+      "mel",
+      "bcc",
+      "akiec",
+      "scc"
+    ],
+    "class_info": {},
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "seed": 42,
+    "split_file": "data/splits.csv",
+    "resplit": false,
+    "model_type": "efficientnet_b0",
+    "pretrained": true,
+    "use_metadata": true,
+    "img_size": 192,
+    "init_from": "",
+    "epochs": 10,
+    "batch_size": 32,
+    "learning_rate": 0.0002,
+    "weight_decay": 0.0001,
+    "label_smoothing": 0.05,
+    "patience": 4,
+    "balance_power": 0.5,
+    "loss_weight_power": 0.25,
+    "meta_dropout": 0.3,
+    "max_hours": 0.0,
+    "models_dir": "models/trained",
+    "checkpoint_dir": "models/checkpoints",
+    "promote": "if_better",
+    "resume": false,
+    "device": "auto",
+    "num_workers": 2,
+    "threads": 4,
+    "log_every": 50
+  },
+  "notes": "Trained with the pre-restructure training CLI (dermaai/train.py), which used the same recipe, data and split that training/train.py now uses; registered into the model store on 2026-10-04.",
+  "metrics": {
+    "n_images": 3619,
+    "accuracy": 0.7449571704890854,
+    "balanced_accuracy": 0.6162826865881772,
+    "macro_precision": 0.5697173989049904,
+    "macro_recall": 0.6162826865881772,
+    "macro_f1": 0.584332528652614,
+    "ece": 0.02113192674039179,
+    "per_class": {
+      "akiec": {
+        "precision": 0.3153153153153153,
+        "recall": 0.28225806451612906,
+        "f1": 0.2978723404255319,
+        "support": 124,
+        "auc": 0.9151529835248513
+      },
+      "bcc": {
+        "precision": 0.7257731958762886,
+        "recall": 0.7410526315789474,
+        "f1": 0.7333333333333333,
+        "support": 475,
+        "auc": 0.956698138475961
+      },
+      "bkl": {
+        "precision": 0.6320474777448071,
+        "recall": 0.56951871657754,
+        "f1": 0.5991561181434599,
+        "support": 374,
+        "auc": 0.9126397666504618
+      },
+      "df": {
+        "precision": 0.5263157894736842,
+        "recall": 0.5882352941176471,
+        "f1": 0.5555555555555556,
+        "support": 34,
+        "auc": 0.9195914349003199
+      },
+      "mel": {
+        "precision": 0.7007575757575758,
+        "recall": 0.5727554179566563,
+        "f1": 0.6303236797274276,
+        "support": 646,
+        "auc": 0.883013165965308
+      },
+      "nv": {
+        "precision": 0.8556430446194225,
+        "recall": 0.8863512778684067,
+        "f1": 0.8707264957264957,
+        "support": 1839,
+        "auc": 0.9356837802665103
+      },
+      "vasc": {
+        "precision": 0.5,
+        "recall": 0.7567567567567568,
+        "f1": 0.6021505376344086,
+        "support": 37,
+        "auc": 0.981378363287911
+      },
+      "scc": {
+        "precision": 0.3018867924528302,
+        "recall": 0.5333333333333333,
+        "f1": 0.3855421686746988,
+        "support": 90,
+        "auc": 0.9094990711879348
+      }
+    },
+    "classes": [
+      "akiec",
+      "bcc",
+      "bkl",
+      "df",
+      "mel",
+      "nv",
+      "vasc",
+      "scc"
+    ],
+    "macro_auc": 0.9267070880324073,
+    "malignant_auc": 0.9059420033189687,
+    "melanoma_auc": 0.883013165965308,
+    "melanoma_at_90_sensitivity": {
+      "threshold": 0.04120802879333496,
+      "sensitivity": 0.8993808049535603,
+      "specificity": 0.58627648839556
+    },
+    "per_source": {
+      "BCN20000": {
+        "n_images": 1756,
+        "balanced_accuracy": 0.5704697227863227,
+        "accuracy": 0.6634396355353075
+      },
+      "HAM10000": {
+        "n_images": 1458,
+        "balanced_accuracy": 0.6890207266147478,
+        "accuracy": 0.8292181069958847
+      },
+      "MSK": {
+        "n_images": 405,
+        "balanced_accuracy": 0.7365620490620491,
+        "accuracy": 0.7950617283950617
+      }
+    }
+  }
+}

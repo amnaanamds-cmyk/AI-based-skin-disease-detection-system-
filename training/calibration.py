@@ -57,5 +57,9 @@ def fit_ood_detector(model, train_loader: DataLoader, val_loader: DataLoader, de
     tr_feats, tr_labels = collect_features(model, train_loader, device)
     density = fit_feature_density(tr_feats.numpy(), tr_labels.numpy())
     val_feats, _ = collect_features(model, val_loader, device)
-    threshold = float(np.percentile(mahalanobis_score(val_feats, density).numpy(), percentile))
-    return {**density, "threshold": threshold}
+    scores = mahalanobis_score(val_feats, density).numpy()
+    threshold = float(np.percentile(scores, percentile))
+    # Beyond far_threshold an image is treated as "not a lesion photo at all" and even an urgent result is
+    # replaced by a retake request. It sits above every real validation image, so no genuine lesion is affected.
+    far_threshold = float(scores.max() * 1.1)
+    return {**density, "threshold": threshold, "far_threshold": far_threshold}

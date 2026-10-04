@@ -104,7 +104,8 @@ class Predictor:
         score = float(mahalanobis_score(self.model.embed(x).float(), self.ood).item())
         thr = float(self.ood["threshold"])
         # "far": so unlike any lesion (noise, objects, screenshots) that even an urgent answer is meaningless.
-        return {"score": round(score, 2), "threshold": round(thr, 2), "unfamiliar": score > thr, "far": score > 3 * thr}
+        far = float(self.ood.get("far_threshold") or 3 * thr)  # older models: fixed multiple of the threshold
+        return {"score": round(score, 2), "threshold": round(thr, 2), "unfamiliar": score > thr, "far": score > far}
 
     def _triage(self, probs: dict[str, float], uncertainty: float, quality_ok: bool, abcde: dict | None,
                 unfamiliar: bool | str = False) -> dict:

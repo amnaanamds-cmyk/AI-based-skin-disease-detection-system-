@@ -112,7 +112,28 @@ print(predict(model, "photo.jpg")["top_class"])
 
 ### Bundled model
 
-RESULTS_PLACEHOLDER
+`models/trained/model_v1` was trained in this repository on **ISIC 2019**: 25,327 usable dermoscopy images,
+8 classes, from Vienna, Barcelona and New York. It is EfficientNet-B0 with ImageNet weights at 192 px, trained for 7
+epochs on 4 CPU cores (early stopping kept epoch 3). It is evaluated on 3,619 held-out test images, split by
+lesion so no lesion appears in both training and test:
+
+| Metric | model_v1 |
+|---|---|
+| Balanced accuracy (8 classes; chance = 0.125) | **0.616** |
+| Accuracy | 0.745 |
+| Macro AUC / malignant-vs-benign AUC / melanoma AUC | 0.927 / 0.906 / 0.883 |
+| Specificity at 90% melanoma sensitivity | 0.586 |
+| Calibration error (ECE) | 0.021 |
+| Per-class recall | nv 0.89 · vasc 0.76 · bcc 0.74 · df 0.59 · mel 0.57 · bkl 0.57 · scc 0.53 · akiec 0.28 |
+
+These are honest but **modest** numbers, limited by CPU-only training at low resolution (192 px, one small model).
+For context, the top ISIC 2019 challenge entries scored roughly 0.6 balanced accuracy on the official test set (which
+also contains an "unknown" class), using GPU-trained ensembles at much higher resolution. These numbers are not directly
+comparable, but a GPU retrain with `--model-type efficientnet_b2 --img-size 260` should improve results. Weak spots are actinic keratosis (often confused with BCC and SCC) and melanoma vs. nevus. Open
+`models/trained/model_v1/report.html` for the full confusion matrix.
+
+**Licence:** ISIC 2019 is CC BY-NC 4.0, so this model is for **non-commercial use**. A commercial product needs
+training data licensed for commercial use. Retrain with `python training/train.py` once you have it.
 
 ## API
 
@@ -181,9 +202,12 @@ backbone features of the training images. It then sets a threshold at the 95th p
 on the validation images, which are held out from that fit. At inference, an image beyond the threshold is flagged
 `ood.unfamiliar`. A low or moderate result is replaced by a "doesn't look like a typical lesion photo" retake
 message, but a **high result is kept** so an atypical cancer is still referred. Images more than 3× past the
-threshold (noise, objects, screenshots) are always sent back for a retake. With the synthetic smoke-test model,
-this flagged 20/20 non-lesion images (noise, flat colour, gradients, patterns) and 2/50 real-distribution images.
-Energy scores were tried first and caught none, because weak models stay confident on garbage.
+A second, "far" threshold is set 10% above the most unusual real validation image. Beyond it, even an urgent result
+becomes a retake request, which never affects a genuine lesion photo from the validation set. With model_v1, a
+flat-colour graphic is sent back for a retake. Random noise is flagged as unusual (about 2× the threshold) but keeps
+its urgent result, because it falls inside the range of real outliers. Energy scores were tried first and caught
+nothing. To reject non-lesion photos reliably, add a `not_lesion/` class folder with everyday photos to `data/raw`
+and retrain.
 
 ### Configuration (environment variables)
 

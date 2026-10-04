@@ -42,7 +42,7 @@ from dermaai.device import pick_device
 from dermaai.model import GITHUB_WEIGHTS, DermNet, load_checkpoint, save_checkpoint
 from dermaai.preprocessing import PreprocessingParams, eval_transform, train_transform
 from training.calibration import fit_ood_detector, fit_temperature
-from training.config import TrainingConfig, parse_config
+from training.config import ROOT, TrainingConfig, parse_config
 from training.dataset import (
     LesionDataset,
     assign_splits,
@@ -88,6 +88,15 @@ def load_initial_weights(model: DermNet, init_from: str, models_dir: Path) -> st
     note = f" (re-initialised {len(skipped)} tensors, e.g. the class layer, because the classes changed)" if skipped else ""
     print(f"[model] starting from {version}{note}")
     return version
+
+
+def project_relative(path) -> str:
+    """Store paths relative to the project so saved records stay valid on another machine."""
+    p = Path(path)
+    try:
+        return p.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(p)
 
 
 def data_signature(df) -> str:
@@ -255,14 +264,15 @@ def train(cfg: TrainingConfig) -> dict:
         "best_epoch": best_epoch,
         "epochs_run": len(history),
         "training_minutes": round((time.time() - started) / 60, 1),
-        "dataset": {"path": str(cfg.path(cfg.data_dir)), "images": len(df),
+        "dataset": {"path": project_relative(cfg.path(cfg.data_dir)), "images": len(df),
                     "per_split": {s: int((df["split"] == s).sum()) for s in ("train", "val", "test")},
                     "per_class": df["label"].value_counts().to_dict(), "signature": signature},
         "training_config": asdict(cfg),
         "metrics": {k: v for k, v in metrics.items() if k not in ("confusion_matrix",)},
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    df[["path", "label", "split", "lesion_id"]].to_csv(out_dir / "dataset_used.csv", index=False)  # exact data record
+    used = df[["path", "label", "split", "lesion_id"]].assign(path=df["path"].map(project_relative))
+    used.to_csv(out_dir / "dataset_used.csv", index=False)  # exact record of the data behind this version
     save_checkpoint(out_dir / model_store.MODEL_FILE, model, ood=ood, **meta)
     (out_dir / model_store.INFO_FILE).write_text(json.dumps(meta, indent=2, default=str))
     write_reports(metrics, out_dir, history, {"version": version, "started_from": started_from,
