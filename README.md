@@ -18,7 +18,7 @@ DermaAI combines these services in one app:
 
 The lesion check is the core. It answers the question patients actually have:
 **"How soon should I see a dermatologist?"** It does not stop at a label. Each check runs a quality gate,
-gives calibrated probabilities for 7 conditions, reports how uncertain the model is, shows where the network
+gives calibrated probabilities for 8 conditions, reports how uncertain the model is, shows where the network
 looked (Grad-CAM), runs an independent ABCDE analysis, and ends with a triage level biased toward sensitivity.
 
 > ⚠️ DermaAI supports decisions and education. It is **not** a medical device and does not give a diagnosis.
@@ -126,6 +126,13 @@ held-out test images, split by lesion so no lesion appears in both training and 
 | Calibration error (ECE) | 0.021 | 0.021 |
 | Recall: mel / bcc / scc / akiec | 0.57 / 0.74 / 0.53 / 0.28 | **0.66** / 0.74 / 0.39 / **0.53** |
 | Recall: nv / bkl / df / vasc | 0.89 / 0.57 / 0.59 / 0.76 | 0.83 / **0.62** / 0.56 / 0.73 |
+
+**Triage on the full test set** (model_v2 through the app's own prediction path, with the photo-quality gate):
+94.9% of cancers and pre-cancers are referred (urgent or within weeks), including 92.9% of melanomas; 1.2% of
+cancers get a "retake the photo" request. The cost of that sensitivity is that 36% of benign lesions are also marked
+urgent. Moving the thresholds only trades one for the other (e.g. 23% benign-urgent costs about 7% of melanomas), so
+the screening defaults are kept. Adjust `DERMAAI_MEL_THRESHOLD` and `DERMAAI_MALIGNANT_HIGH` / `_MODERATE` if your
+setting needs a different balance. A better model is the real way to reduce false alarms.
 
 v2 was promoted automatically because it beat v1 on the same test images. SCC recall dropped, partly perhaps
 because this run's fine-tuning started with the SCC and vascular outputs swapped (a class-order bug, since fixed and

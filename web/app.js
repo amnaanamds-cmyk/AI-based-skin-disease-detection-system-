@@ -16,6 +16,8 @@ function route() {
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
+// Clicking the tab you are already on doesn't change the URL, so refresh that view explicitly.
+document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", () => { if (a.hash === location.hash) route(); }));
 
 // ---------- bootstrap ----------
 async function init() {

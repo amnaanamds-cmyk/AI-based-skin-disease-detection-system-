@@ -381,3 +381,9 @@ window.addEventListener("dermaai:view", (e) => {
 const initial = (location.hash || "").slice(1);
 if (initial === "bodymap") { drawBody(); renderSpotPanel(); }
 if (initial === "history") renderReferrals();
+
+// A doctor may reply while the page is open: re-check when the user returns to the tab, and every minute
+// while the History view is visible and there are cases waiting for a reply.
+const onHistory = () => (location.hash || "").slice(1) === "history" && document.visibilityState === "visible";
+document.addEventListener("visibilitychange", () => { if (onHistory()) renderReferrals(); });
+setInterval(() => { if (onHistory() && referrals().length) renderReferrals(); }, 60_000);

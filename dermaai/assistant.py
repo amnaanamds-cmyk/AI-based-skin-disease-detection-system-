@@ -95,7 +95,7 @@ KNOWLEDGE = [
      "Use daylight without flash, hold the camera parallel to the skin, and fill most of the frame with the spot and a "
      "little surrounding skin. Tap to focus. For tracking, keep the same distance and lighting and add a coin for scale."),
     ("How DermaAI works", "how does app work accuracy ai model trust reliable diagnosis",
-     "DermaAI checks image quality, estimates probabilities for 7 lesion types with a deep-learning model, shows where it "
+     "DermaAI checks image quality, estimates probabilities for 8 lesion types with a deep-learning model, shows where it "
      "looked, and runs an ABCDE analysis. It is a decision-support tool, not a diagnosis: it can be wrong, and a "
      "dermatologist should examine any lesion that worries you."),
     ("Patch testing", "patch test new product reaction allergy irritation",
