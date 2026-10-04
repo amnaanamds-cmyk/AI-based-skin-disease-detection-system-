@@ -1,0 +1,29 @@
+Test-set evaluation
+===================
+images: 3619
+balanced accuracy: 0.634   (main score; 1/8 = 0.125 would be random guessing)
+accuracy: 0.744   macro F1: 0.604   macro AUC: 0.926
+malignant-vs-benign AUC: 0.908
+melanoma AUC: 0.896   specificity at 90% melanoma sensitivity: 0.675
+calibration error (ECE, lower is better): 0.021
+
+class            precision   recall      F1     AUC  images
+akiec                0.346    0.532   0.419   0.936     124
+bcc                  0.735    0.741   0.738   0.967     475
+bkl                  0.636    0.620   0.628   0.904     374
+df                   0.528    0.559   0.543   0.900      34
+mel                  0.648    0.663   0.655   0.896     646
+nv                   0.883    0.835   0.858   0.943    1839
+scc                  0.347    0.389   0.366   0.898      90
+vasc                 0.551    0.730   0.628   0.969      37
+
+confusion matrix (rows = true class, columns = predicted)
+             akiec     bcc     bkl      df     mel      nv     scc    vasc
+akiec           66      27      15       2       2       0      12       0
+bcc             46     352      18       4      12       7      29       7
+bkl             40      17     232       1      33      42       7       2
+df               2       6       0      19       2       1       4       0
+mel             14      10      34       0     428     147       9       4
+nv              11      44      50       7     179    1535       4       9
+scc             12      23      16       1       3       0      35       0
+vasc             0       0       0       2       1       6       1      27

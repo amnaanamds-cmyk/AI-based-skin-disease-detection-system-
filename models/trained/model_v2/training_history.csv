@@ -1,0 +1,4 @@
+epoch,train_loss,val_balanced_accuracy,val_macro_f1,val_melanoma_auc,minutes
+1,0.93454,0.61688,0.5818,0.88057,22.6
+2,0.76582,0.613,0.58995,0.88341,15.6
+3,0.73613,0.61037,0.58587,0.88624,15.3

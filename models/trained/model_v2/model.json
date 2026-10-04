@@ -1,0 +1,227 @@
+{
+  "version_name": "model_v2",
+  "classes": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "scc",
+    "vasc"
+  ],
+  "malignant_classes": [
+    "mel",
+    "bcc",
+    "akiec",
+    "scc"
+  ],
+  "class_info": {},
+  "preprocessing": {
+    "img_size": 192,
+    "resize_ratio": 1.14,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "img_size": 192,
+  "temperature": 0.9897583723068237,
+  "trained_at": "2026-10-04 12:41",
+  "started_from": "model_v1",
+  "best_epoch": 1,
+  "epochs_run": 3,
+  "training_minutes": 63.2,
+  "dataset": {
+    "path": "data/raw",
+    "images": 25327,
+    "per_split": {
+      "train": 18089,
+      "val": 3619,
+      "test": 3619
+    },
+    "per_class": {
+      "nv": 12873,
+      "mel": 4520,
+      "bcc": 3323,
+      "bkl": 2624,
+      "akiec": 867,
+      "scc": 628,
+      "vasc": 253,
+      "df": 239
+    },
+    "signature": "acc45fa1393b29f2"
+  },
+  "training_config": {
+    "data_dir": "data/raw",
+    "processed_dir": "data/processed",
+    "processed_size": 288,
+    "class_names": [],
+    "min_images_per_class": 20,
+    "malignant_classes": [
+      "mel",
+      "bcc",
+      "akiec",
+      "scc"
+    ],
+    "class_info": {},
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "seed": 42,
+    "split_file": "data/splits.csv",
+    "resplit": false,
+    "model_type": "efficientnet_b0",
+    "pretrained": true,
+    "use_metadata": true,
+    "img_size": 192,
+    "init_from": "current",
+    "epochs": 3,
+    "batch_size": 32,
+    "learning_rate": 5e-05,
+    "weight_decay": 0.0001,
+    "label_smoothing": 0.05,
+    "patience": 4,
+    "balance_power": 0.5,
+    "loss_weight_power": 0.25,
+    "meta_dropout": 0.3,
+    "max_hours": 0.0,
+    "models_dir": "models/trained",
+    "checkpoint_dir": "models/checkpoints",
+    "promote": "if_better",
+    "resume": false,
+    "device": "auto",
+    "num_workers": 2,
+    "threads": 4,
+    "log_every": 100
+  },
+  "metrics": {
+    "n_images": 3619,
+    "accuracy": 0.7444045316385742,
+    "balanced_accuracy": 0.6335381459049284,
+    "macro_precision": 0.5841309055619017,
+    "macro_recall": 0.6335381459049284,
+    "macro_f1": 0.604477805647742,
+    "ece": 0.02109054186769729,
+    "per_class": {
+      "akiec": {
+        "precision": 0.34554973821989526,
+        "recall": 0.532258064516129,
+        "f1": 0.41904761904761906,
+        "support": 124,
+        "auc": 0.9362684018644146
+      },
+      "bcc": {
+        "precision": 0.7348643006263048,
+        "recall": 0.7410526315789474,
+        "f1": 0.7379454926624738,
+        "support": 475,
+        "auc": 0.9665735904647114
+      },
+      "bkl": {
+        "precision": 0.6356164383561644,
+        "recall": 0.6203208556149733,
+        "f1": 0.6278755074424899,
+        "support": 374,
+        "auc": 0.9035167225595938
+      },
+      "df": {
+        "precision": 0.5277777777777778,
+        "recall": 0.5588235294117647,
+        "f1": 0.5428571428571428,
+        "support": 34,
+        "auc": 0.8998687341045205
+      },
+      "mel": {
+        "precision": 0.6484848484848484,
+        "recall": 0.6625386996904025,
+        "f1": 0.655436447166922,
+        "support": 646,
+        "auc": 0.8956282497065957
+      },
+      "nv": {
+        "precision": 0.883199079401611,
+        "recall": 0.8346927678085916,
+        "f1": 0.8582611126642438,
+        "support": 1839,
+        "auc": 0.9429275803288305
+      },
+      "scc": {
+        "precision": 0.3465346534653465,
+        "recall": 0.3888888888888889,
+        "f1": 0.36649214659685864,
+        "support": 90,
+        "auc": 0.8975095242593119
+      },
+      "vasc": {
+        "precision": 0.5510204081632653,
+        "recall": 0.7297297297297297,
+        "f1": 0.627906976744186,
+        "support": 37,
+        "auc": 0.9692456275370849
+      }
+    },
+    "classes": [
+      "akiec",
+      "bcc",
+      "bkl",
+      "df",
+      "mel",
+      "nv",
+      "scc",
+      "vasc"
+    ],
+    "macro_auc": 0.9264423038531329,
+    "malignant_auc": 0.9080016004512749,
+    "melanoma_auc": 0.8956282497065957,
+    "melanoma_at_90_sensitivity": {
+      "threshold": 0.09765924513339996,
+      "sensitivity": 0.8993808049535603,
+      "specificity": 0.6747393205516313
+    },
+    "per_source": {
+      "BCN20000": {
+        "n_images": 1756,
+        "balanced_accuracy": 0.5781070529743297,
+        "accuracy": 0.6702733485193622
+      },
+      "HAM10000": {
+        "n_images": 1458,
+        "balanced_accuracy": 0.7168540519872499,
+        "accuracy": 0.8161865569272977
+      },
+      "MSK": {
+        "n_images": 405,
+        "balanced_accuracy": 0.7858270202020202,
+        "accuracy": 0.8074074074074075
+      }
+    }
+  },
+  "notes": "Fine-tuned from model_v1 for 3 epochs (learning rate 5e-5). Known issue in this run: the class layer was copied from model_v1 by position, but v1 orders its last two classes 'vasc, scc' while v2 uses 'scc, vasc', so those two outputs started swapped and were re-learned during training. This was fixed afterwards (rows are now copied by class name). The test metrics below are measured normally.",
+  "comparison_with_model_v1": {
+    "model_v1": {
+      "balanced_accuracy": 0.6163,
+      "accuracy": 0.745,
+      "macro_f1": 0.5843,
+      "macro_auc": 0.9267,
+      "malignant_auc": 0.9059,
+      "melanoma_auc": 0.883,
+      "ece": 0.0211
+    },
+    "model_v2": {
+      "balanced_accuracy": 0.6335,
+      "accuracy": 0.7444,
+      "macro_f1": 0.6045,
+      "macro_auc": 0.9264,
+      "malignant_auc": 0.908,
+      "melanoma_auc": 0.8956,
+      "ece": 0.0211
+    },
+    "test_images": 3619
+  }
+}

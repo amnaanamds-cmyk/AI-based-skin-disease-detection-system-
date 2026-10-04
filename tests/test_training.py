@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 import pandas as pd
 import pytest
 from PIL import Image
@@ -131,3 +132,27 @@ def test_label_csv_layout_and_aliases(tmp_path):
     df = load_dataset(raw)
     assert sorted(df["label"]) == ["bcc", "bcc", "mel", "nv"]
     assert df["lesion_id"].notna().all()
+
+
+def test_finetune_maps_class_layer_by_name_when_order_differs(tmp_path, capsys):
+    from dermaai.model import DermNet, load_checkpoint
+    from training.train import load_initial_weights
+
+    data = make_data(tmp_path / "raw", 10)
+    order_v1 = ["vasc", "nv", "mel", "df", "bkl", "bcc", "akiec"]  # deliberately not alphabetical
+    train(config(tmp_path, data, "--epochs", "1", "--class-names", *order_v1))
+    models = tmp_path / "models"
+    v1, info = load_checkpoint(model_store.model_path("model_v1", models))
+    assert info["classes"] == order_v1
+
+    alphabetical = sorted(order_v1)
+    fresh = DermNet("resnet18", len(alphabetical))
+    load_initial_weights(fresh, alphabetical, "model_v1", models)
+    for i, c in enumerate(alphabetical):
+        j = order_v1.index(c)
+        assert torch.equal(fresh.head.weight[i], v1.head.weight[j]) and torch.equal(fresh.head.bias[i], v1.head.bias[j])
+
+    capsys.readouterr()
+    train(config(tmp_path, data, "--epochs", "1", "--init-from", "current"))
+    out = capsys.readouterr().out
+    assert "balanced accuracy on this test set: model_v2" in out  # compared, not skipped as "classes changed"

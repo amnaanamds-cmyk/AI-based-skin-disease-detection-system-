@@ -112,19 +112,25 @@ print(predict(model, "photo.jpg")["top_class"])
 
 ### Bundled model
 
-`models/trained/model_v1` was trained in this repository on **ISIC 2019**: 25,327 usable dermoscopy images,
-8 classes, from Vienna, Barcelona and New York. It is EfficientNet-B0 with ImageNet weights at 192 px, trained for 7
-epochs on 4 CPU cores (early stopping kept epoch 3). It is evaluated on 3,619 held-out test images, split by
-lesion so no lesion appears in both training and test:
+Two versions were trained in this repository on **ISIC 2019**: 25,327 usable dermoscopy images, 8 classes, from
+Vienna, Barcelona and New York. Both use EfficientNet-B0 at 192 px on 4 CPU cores and are scored on the same 3,619
+held-out test images, split by lesion so no lesion appears in both training and test:
 
-| Metric | model_v1 |
-|---|---|
-| Balanced accuracy (8 classes; chance = 0.125) | **0.616** |
-| Accuracy | 0.745 |
-| Macro AUC / malignant-vs-benign AUC / melanoma AUC | 0.927 / 0.906 / 0.883 |
-| Specificity at 90% melanoma sensitivity | 0.586 |
-| Calibration error (ECE) | 0.021 |
-| Per-class recall | nv 0.89 · vasc 0.76 · bcc 0.74 · df 0.59 · mel 0.57 · bkl 0.57 · scc 0.53 · akiec 0.28 |
+| Metric | model_v1 | model_v2 (current) |
+|---|---|---|
+| How it was trained | ImageNet weights, 7 epochs (best: 3) | fine-tuned from v1 with `--init-from current`, 3 epochs, LR 5e-5 |
+| Balanced accuracy (8 classes; chance = 0.125) | 0.616 | **0.634** |
+| Accuracy | 0.745 | 0.744 |
+| Macro F1 | 0.584 | **0.605** |
+| Macro AUC / malignant AUC / melanoma AUC | 0.927 / 0.906 / 0.883 | 0.926 / **0.908** / **0.896** |
+| Calibration error (ECE) | 0.021 | 0.021 |
+| Recall: mel / bcc / scc / akiec | 0.57 / 0.74 / 0.53 / 0.28 | **0.66** / 0.74 / 0.39 / **0.53** |
+| Recall: nv / bkl / df / vasc | 0.89 / 0.57 / 0.59 / 0.76 | 0.83 / **0.62** / 0.56 / 0.73 |
+
+v2 was promoted automatically because it beat v1 on the same test images. SCC recall dropped, partly perhaps
+because this run's fine-tuning started with the SCC and vascular outputs swapped (a class-order bug, since fixed and
+covered by a test; see `notes` in `model_v2/model.json`). If SCC matters most for your use, roll back with
+`python training/manage_models.py use model_v1`.
 
 These are honest but **modest** numbers, limited by CPU-only training at low resolution (192 px, one small model).
 For context, the top ISIC 2019 challenge entries scored roughly 0.6 balanced accuracy on the official test set (which
@@ -204,8 +210,10 @@ on the validation images, which are held out from that fit. At inference, an ima
 message, but a **high result is kept** so an atypical cancer is still referred. Images more than 3× past the
 A second, "far" threshold is set 10% above the most unusual real validation image. Beyond it, even an urgent result
 becomes a retake request, which never affects a genuine lesion photo from the validation set. With model_v1, a
-flat-colour graphic is sent back for a retake. Random noise is flagged as unusual (about 2× the threshold) but keeps
-its urgent result, because it falls inside the range of real outliers. Energy scores were tried first and caught
+flat-colour graphic and random noise are both flagged as unusual (about 2× the threshold). Whether the urgent result
+is kept then depends on what the model predicts: v1 sends the graphic back for a retake, while v2 predicts "malignant"
+for it and keeps the urgent result with an "unusual image" warning. Both images fall inside the range of real outliers,
+so the far threshold deliberately does not override them. Energy scores were tried first and caught
 nothing. To reject non-lesion photos reliably, add a `not_lesion/` class folder with everyday photos to `data/raw`
 and retrain.
 

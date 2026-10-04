@@ -72,8 +72,9 @@ def cosine_with_warmup(optimizer, warmup_steps: int, total_steps: int):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
 
 
-def load_initial_weights(model: DermNet, init_from: str, models_dir: Path) -> str:
-    """Fine-tuning: copy every weight whose shape still fits (all of them unless classes changed)."""
+def load_initial_weights(model: DermNet, classes: list[str], init_from: str, models_dir: Path) -> str:
+    """Fine-tuning: copy the earlier model's weights. The class layer is copied row by row *by class name*,
+    so it stays correct when classes are added, removed or listed in a different order."""
     version = model_store.current_version(models_dir) if init_from == "current" else init_from
     path = model_store.model_path(version, models_dir) if version else None
     if not path:
@@ -81,12 +82,21 @@ def load_initial_weights(model: DermNet, init_from: str, models_dir: Path) -> st
     old, info = load_checkpoint(path)
     if old.arch != model.arch:
         raise SystemExit(f"--init-from {version} uses {old.arch}, but model_type is {model.arch}. Use the same model_type.")
-    own = model.state_dict()
-    usable = {k: v for k, v in old.state_dict().items() if k in own and own[k].shape == v.shape}
+    own, old_state = model.state_dict(), old.state_dict()
+    usable = {k: v for k, v in old_state.items() if k in own and own[k].shape == v.shape and not k.startswith("head.")}
+    old_classes = list(info.get("classes", []))
+    copied = []
+    if old_state["head.weight"].shape[1] == own["head.weight"].shape[1]:
+        weight, bias = own["head.weight"].clone(), own["head.bias"].clone()
+        for i, c in enumerate(classes):
+            if c in old_classes:
+                j = old_classes.index(c)
+                weight[i], bias[i] = old_state["head.weight"][j], old_state["head.bias"][j]
+                copied.append(c)
+        usable.update({"head.weight": weight, "head.bias": bias})
     model.load_state_dict(usable, strict=False)
-    skipped = [k for k in own if k not in usable]
-    note = f" (re-initialised {len(skipped)} tensors, e.g. the class layer, because the classes changed)" if skipped else ""
-    print(f"[model] starting from {version}{note}")
+    new = [c for c in classes if c not in copied]
+    print(f"[model] starting from {version}" + (f"; new classes start untrained: {new}" if new else ""))
     return version
 
 
@@ -152,7 +162,7 @@ def train(cfg: TrainingConfig) -> dict:
         raise SystemExit(f"Could not download ImageNet weights for '{cfg.model_type}' ({type(e).__name__}: {e}).\n"
                          f"Check your internet connection, pick a model_type with mirrored weights "
                          f"({', '.join(GITHUB_WEIGHTS)}), or train without them using --no-pretrained (much less accurate).")
-    started_from = load_initial_weights(model, cfg.init_from, models_dir) if cfg.init_from else (
+    started_from = load_initial_weights(model, classes, cfg.init_from, models_dir) if cfg.init_from else (
         "ImageNet" if cfg.pretrained else "random")
     criterion = nn.CrossEntropyLoss(weight=class_weights(train_labels, len(classes), cfg.loss_weight_power).to(device),
                                     label_smoothing=cfg.label_smoothing)
@@ -293,15 +303,17 @@ def decide_promotion(cfg, version, metrics, models_dir, test_df, classes, device
         promote, reason = True, "promote=always" if cfg.promote == "always" else "first trained model"
     else:
         old, info = load_checkpoint(model_store.model_path(current, models_dir))
-        if info.get("classes") != classes:
-            promote, reason = True, f"classes changed ({current} cannot be compared on this test set)"
+        old_classes = list(info.get("classes", []))
+        if set(old_classes) != set(classes):
+            promote, reason = True, f"the set of classes changed ({current} cannot be compared on this test set)"
         else:
             old.to(device)
             prep = PreprocessingParams.from_dict(info.get("preprocessing"), img_size=info.get("img_size"))
             loader = DataLoader(LesionDataset(test_df, classes, eval_transform(prep)), batch_size=cfg.batch_size)
             logits, labels = predict_loader(old, loader, device)
-            old_m = compute_metrics(torch.softmax(logits / float(info.get("temperature") or 1), 1).numpy(),
-                                    labels.numpy(), classes, info.get("malignant_classes"))
+            order = [old_classes.index(c) for c in classes]  # old model's outputs, in this run's class order
+            old_probs = torch.softmax(logits / float(info.get("temperature") or 1), 1).numpy()[:, order]
+            old_m = compute_metrics(old_probs, labels.numpy(), classes, info.get("malignant_classes"))
             new_b, old_b = metrics["balanced_accuracy"], old_m["balanced_accuracy"]
             promote = new_b >= old_b - 0.005
             reason = (f"balanced accuracy on this test set: {version} {new_b:.4f} vs {current} {old_b:.4f}")

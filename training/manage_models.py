@@ -40,7 +40,8 @@ def cmd_list(models_dir: Path) -> None:
         print(f"{'*' if v == current else ' '} {v:<12}{str(info.get('trained_at', '?')):<18}"
               f"{info.get('dataset', {}).get('images', '?'):>8}{len(info.get('classes', [])):>9}"
               f"{fmt(m.get('balanced_accuracy')):>9}{fmt(m.get('melanoma_auc')):>9}  {info.get('started_from', '?')}")
-    print("\n* = used by the app. Scores are on each version's own test split.")
+    print("\n* = used by the app. Scores are on the test split of the data each version was trained with "
+          "(kept stable in data/splits.csv, so versions trained on the same data are directly comparable).")
 
 
 def cmd_import(src: Path, models_dir: Path) -> str:

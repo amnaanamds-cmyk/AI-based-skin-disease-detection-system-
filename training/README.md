@@ -97,8 +97,9 @@ Most useful settings:
 | **Fresh** | `python training/train.py` | ImageNet weights | you have plenty of data, changed `model_type`, or want a clean result |
 | **Fine-tune** | `python training/train.py --init-from current` | the app's current model (or `--init-from model_v2`) | adding data, small datasets, adding a class. Faster, keeps what was learned |
 
-Both create a new version; nothing is overwritten. With `--init-from`, every layer whose shape still fits is
-reused. If you added or removed classes, only the final class layer starts fresh.
+Both create a new version; nothing is overwritten. With `--init-from`, all weights are reused. The final class
+layer is copied class by class, matched by name, so it stays correct if the class order differs. Classes that are
+new in your data start untrained and are learned during the run.
 
 Fine-tuning is safe with respect to evaluation: `data/splits.csv` guarantees that images the earlier model was tested
 on are still only in the test set.
