@@ -22,5 +22,6 @@ data/processed/*
 # In-progress training state is temporary; trained versions in models/trained/ are kept.
 models/checkpoints/
 models/*.pt
+models/*.json
 *.pt
 !models/trained/**/model.pt
